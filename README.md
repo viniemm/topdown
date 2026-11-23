@@ -1,101 +1,101 @@
-# omarchy-agent-launcher
+# topdown
 
-A TUI launcher for coding agents and other terminal apps on Omarchy. Pick an
-agent and the picker's own terminal becomes that agent — no second window.
+One TUI to launch, resume and manage coding agents: Claude Code, Codex,
+OpenCode, Pi, Oh My Pi, Hermes, Antigravity and the rest. Built on omp's stack
+(TypeScript on Bun, [`@oh-my-pi/pi-tui`](https://www.npmjs.com/package/@oh-my-pi/pi-tui)),
+with the look of omp's model picker.
 
-- **Super+A** — launch the default agent (no default yet → the picker chooses one)
-- **Super+Shift+A** — the picker
+```
+╭─ topdown ────────┬──────────────────────────────────────────────────────────╮
+│   ▦ Apps       6 │  Recent conversations                                    │
+│   ◷ Recent       │  ›                                                       │
+│ ──────────────── │  ● 17:32      claude  topdown      Port the launcher     │
+│   ◆ claude   22% │    Wed 18:39  hermes  mintern      Lightest Linux distro │
+│   ◆ hermes       │    Nov 12     pi      xfin         Refactor auth module  │
+│                  │ ──────────────────────────────────────────────────────── │
+│                  │  Port the launcher                                       │
+│                  │  claude  ~/Work/topdown  17:32 · 3s ago  ● open          │
+├──────────────────┴──────────────────────────────────────────────────────────┤
+│ ⏎ open · Alt-⏎ window · ^O options · Tab apps · ^E rename · ^X delete · esc │
+╰─────────────────────────────────────────────────────────────────────────────╯
+```
 
-## Picker
+Pick something and the hub's own terminal becomes that agent; no second window.
+
+## Keys
 
 | Key | Action |
 |---|---|
-| Enter | Launch the app / resume the session in this window |
-| Alt-Enter | Launch / resume in a separate window |
-| Tab | Jump to recent conversations (all agents) and back to the apps |
-| → / ← | On an app: open just that agent's conversations / go back (← also clears a search there) |
-| Type | Filter apps and conversations (ranked best match first) |
+| Enter / Alt-Enter | Launch or resume here / in a new window (an open conversation: switch to its window) |
+| Ctrl-O | Launch options (Claude: model, effort, permission mode, fork on resume, Chrome) |
+| Tab | Apps ↔ recent conversations |
+| → / ← | An agent's conversations / back (← also leaves a search there) |
+| Type | Fuzzy search (agent, project, title) |
 | Ctrl-D | Make the highlighted agent the default |
-| Ctrl-R | Refresh the highlighted agent's usage |
-| Ctrl-A | Add an app |
-| Ctrl-X / Del | Delete the highlighted conversation, or remove the app from the list (asks first; Del only when the search is empty; a conversation that's open can't be deleted) |
-| Esc | Close |
+| Ctrl-R | Refresh the agent's usage |
+| Ctrl-A | Add an app (installed agents, or any command) |
+| Ctrl-E / F2 | Rename a conversation (in the agent's own format) or an app |
+| Ctrl-X / Del | Delete a conversation (to the Trash, or the agent's own delete) or remove an app; asks first, refuses open ones |
+| Esc | Clear the search, go back, or close |
 
-The list has two sections: your **apps**, then **Recent conversations** — every
-listed agent's sessions, newest first, with timestamps (`21:40`, `Yest 14:02`,
-`Mon 09:10`, `Nov 18`). The arrow keys flow from one section into the other
-(the divider is skipped); the first 30 conversations load at once and more
-load as you scroll near the end, keeping your place. Typing searches up to 300
-(while typing in the main list, ←/→ move the text cursor).
+`←` from the list focuses the sidebar (`↑/↓` switch scopes there).
 
-The right pane shows plan usage (session/weekly limits, balance) and the
-latest sessions for the highlighted app, or a conversation's first prompts.
+## Commands
+
+    topdown [pick]                 the hub in this terminal
+    topdown open                   the hub in a new terminal window
+    topdown default                launch the default agent (none yet: the hub chooses)
+    topdown launch <app-id>
+    topdown resume <agent> <session-id>
+    topdown list [agent…]          recent conversations, tab-separated
+
+Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
+
+    o.rebind("SUPER + A", "Agent", "topdown default")
+    o.rebind("SUPER + SHIFT + A", "Agent hub", "topdown open")
 
 ## How it works
 
-- **Launching** goes through Omarchy's own `omarchy-agent`, so agents get the
-  same auto-permission flags, account pinning, working directory (Omarchy's
-  `~/Work` convention) and
-  `org.omarchy.agent` window class. A small PATH shim
-  (`~/.local/share/omarchy-agent-launcher/shim`) makes `omarchy-agent` run the
-  picked agent instead of the default, and appends extra and resume flags; the
-  shim is removed from PATH before the agent's terminal starts.
-- **Usage** is read (never written) from the records the bar's agents plugin
-  watches: `~/.local/state/omarchy/agents/usage/<id>.json`, produced by
-  `omarchy-agent-usage-update`.
-- **Sessions** are read from each agent's store:
-  Claude `~/.claude/projects`, Pi `~/.pi/agent/sessions`, omp
-  `~/.omp/agent/sessions`, Hermes `~/.hermes/state.db`, Antigravity
-  `~/.gemini/antigravity-cli/conversation_summaries.db`. Only deleting writes:
-  file sessions are moved to the Trash (`gio trash`, restorable), Hermes uses
-  `hermes sessions delete`, and Antigravity, which has no delete command, is left alone.
-- The picker's window has the agent window class (`org.omarchy.agent`), so
-  when Enter turns it into the agent, agent window rules already apply.
-- Parsed session titles are cached in
-  `~/.cache/omarchy-agent-launcher/sessions.json` (keyed by file, mtime, size).
-- Output of separately launched (Alt-Enter) terminals goes to
-  `~/.local/state/omarchy-agent-launcher/launch.log`.
+- **Agents** are adapters (`src/agents/`): how to launch one, its launch
+  options, and where its conversations live, how to resume, rename and delete
+  them, and which are open right now. Claude Code, Pi, omp, Hermes and
+  Antigravity have conversation support; the rest of Omarchy's agents launch.
+- **Running in place.** `bin/topdown` is a small wrapper: the UI writes what to
+  run (folder, environment, command) to a hand-off file and exits, and the
+  wrapper `exec`s it. The terminal becomes the agent; no runtime stays behind.
+- **Omarchy is optional.** When `omarchy-agent` exists, agents launch through
+  it (auto-permission flags, account pinning, `~/Work`, the agent window
+  class), via a PATH shim that adds resume and extra arguments. Plan usage is
+  read (never written) from `~/.local/state/omarchy/agents/usage/`. Without
+  Omarchy, agents run directly.
+- **Conversations** are read from each agent's store: Claude
+  `~/.claude/projects`, Pi `~/.pi/agent/sessions`, omp `~/.omp/agent/sessions`,
+  Hermes `~/.hermes/state.db`, Antigravity
+  `~/.gemini/antigravity-cli/conversation_summaries.db`. Only rename and delete
+  write: Claude gets a `custom-title` entry, Pi a `session_info` entry, Hermes
+  its own `hermes sessions rename/delete`; deleted files go to the freedesktop
+  Trash (restorable). Open Claude conversations are detected from
+  `~/.claude/sessions/<pid>.json`.
+- **Config:** `~/.config/topdown/apps.json` (migrated from Omarchy's
+  `agent-launcher.json`). An agent app may add `"args"` to every launch and
+  resume; Hermes defaults to `--tui`.
 
-## Files
+## Install (Arch)
 
-| Path | Purpose |
-|---|---|
-| `bin/omarchy-agent-launcher` | Picker, launch/resume, add/remove (bash + fzf/gum) |
-| `lib/agent_launcher.py` | Rows, usage meters, session discovery, preview |
-| `pkgbuild/` | Arch package: `PKGBUILD`, `.desktop` launcher entry, icon |
-| `bin/install` | Builds and installs the package (`makepkg -fsi`) |
-| `~/.config/omarchy/agent-launcher.json` | Your app list (created on first run) |
-
-Each app is either an agent Omarchy knows (`"agent"`) or any terminal command
-(`"command"`). An agent app can add `"args"` to every launch and resume, as a
-list or one shell-quoted string:
-
-    {"id": "hermes", "label": "Hermes", "agent": "hermes", "args": ["--tui"]}
-
-Hermes gets `--tui` (its modern TUI) when it has no `"args"` of its own;
-Omarchy's `omarchy-agent` would start the classic REPL. Set `"args": []` to
-keep the REPL.
-
-Installed, the package puts the command in `/usr/bin`, the helper in
-`/usr/lib/omarchy-agent-launcher/`, and an **Agent Launcher** entry in the app
-launcher (Super+Space). Nothing under `/usr/share/omarchy` is modified.
-
-## Install
-
-    git clone https://github.com/viniemm/omarchy-agent-launcher
-    cd omarchy-agent-launcher
+    git clone https://github.com/viniemm/topdown && cd topdown
     bin/install
 
-Remove with `sudo pacman -R omarchy-agent-launcher`.
-
-Keybindings are yours to choose; add them to `~/.config/hypr/bindings.lua`:
-
-    o.rebind("SUPER + A", "Agent", "omarchy-agent-launcher default")
-    o.rebind("SUPER + SHIFT + A", "Agent picker", "omarchy-agent-launcher open")
-
-(Super+Shift+A replaces Omarchy's default ChatGPT web app binding.)
+The package installs `/usr/bin/topdown`, the compiled UI in `/usr/lib/topdown/`
+next to omp's native addon (which pi-tui loads), and replaces the old
+`omarchy-agent-launcher` package (that name stays as a symlink).
 
 ## Development
 
-`bin/omarchy-agent-launcher` runs straight from a checkout (it uses `lib/`
-next to it). Re-run `bin/install` to update the installed package.
+    bun install
+    bun src/main.ts          # or bin/topdown, which also does the exec hand-off
+    bun test                 # fixture home; never touches your real config or Trash
+
+See [ROADMAP.md](ROADMAP.md): every agent, MCP control, a skills manager,
+search inside conversations.
+
+The bash/fzf version is at tag `v0.4.4`.
