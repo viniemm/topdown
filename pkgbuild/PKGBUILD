@@ -1,5 +1,5 @@
 pkgname=topdown
-pkgver=0.5.0
+pkgver=0.6.0
 pkgrel=1
 pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
 arch=('x86_64')
@@ -26,16 +26,11 @@ build() {
 
 package() {
   cd "$startdir/.."
-  # The UI binary and omp's native addon, which it loads from beside itself.
   install -Dm755 "$srcdir/topdown" "$pkgdir/usr/lib/topdown/topdown"
-  install -Dm644 node_modules/@oh-my-pi/pi-natives-linux-x64/pi_natives.linux-x64-modern.node \
-    node_modules/@oh-my-pi/pi-natives-linux-x64/pi_natives.linux-x64-baseline.node -t "$pkgdir/usr/lib/topdown/"
   install -Dm755 bin/topdown "$pkgdir/usr/bin/topdown"
   ln -s topdown "$pkgdir/usr/bin/omarchy-agent-launcher"   # old keybindings keep working
   install -Dm644 "$startdir/topdown.desktop" "$pkgdir/usr/share/applications/topdown.desktop"
   install -Dm644 "$startdir/topdown.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/topdown.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 node_modules/@oh-my-pi/pi-natives-linux-x64/THIRD-PARTY-NOTICES.txt \
-    "$pkgdir/usr/share/licenses/$pkgname/pi-natives-THIRD-PARTY-NOTICES.txt"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

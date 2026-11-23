@@ -6,8 +6,6 @@
 //   topdown launch <app-id>   launch one app from the list
 //   topdown resume <agent> <session-id>
 //   topdown list [agent…]     recent conversations, tab-separated (for scripts)
-import { ProcessTerminal, TUI } from "@oh-my-pi/pi-tui";
-import { initThemeSync } from "@oh-my-pi/pi-tui/theme/theme";
 import { agent as findAgent } from "./agents";
 import { getSession, recent } from "./core/catalog";
 import { getDefault, loadApps } from "./core/config";
@@ -16,6 +14,8 @@ import type { ExecSpec } from "./core/types";
 import { oneline, stamp } from "./core/util";
 import { focusWindow } from "./integrations/hyprland";
 import { isOmarchy, WINDOW_CLASS } from "./integrations/omarchy";
+import { App as Ui } from "./tui/app";
+import { loadTheme } from "./tui/theme";
 import { Hub, type HubResult } from "./ui/hub";
 
 /** How to run topdown itself: the wrapper sets TOPDOWN_SELF; otherwise this runtime + script. */
@@ -33,15 +33,10 @@ async function run(spec: ExecSpec, where: Where, title: string): Promise<never> 
 }
 
 async function pick(chooseDefault: boolean): Promise<never> {
-	initThemeSync();
-	const tui = new TUI(new ProcessTerminal());
-	const result = await new Promise<HubResult>(resolve => {
-		const hub = new Hub(tui, resolve, { chooseDefault });
-		tui.addChild(hub);
-		tui.setFocus(hub);
-		tui.start();
-	});
-	tui.stop();
+	loadTheme();
+	const ui = new Ui();
+	const result = await new Promise<HubResult>(resolve => ui.start(new Hub(ui, resolve, { chooseDefault })));
+	ui.stop();
 	switch (result.action) {
 		case "quit":
 			process.exit(0);

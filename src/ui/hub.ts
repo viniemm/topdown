@@ -1,14 +1,14 @@
-// The main screen: pi-tui's HubFrame (omp's model-picker look).
+// The main screen, in the layout of omp's model picker (see src/tui/frame.ts).
 //   sidebar  Apps · Recent · one entry per agent with conversations
 //   body     scope title, search line, list, detail panel
 //   footer   key hints for whatever has focus
-import type { Component, TUI } from "@oh-my-pi/pi-tui";
-import { Input } from "@oh-my-pi/pi-tui/components/input";
-import { fuzzyRank } from "@oh-my-pi/pi-tui/fuzzy";
-import { parseKey } from "@oh-my-pi/pi-tui/keys";
-import { HubFrame, type SidebarEntry } from "@oh-my-pi/pi-tui/overlays/hub-frame";
-import { theme } from "@oh-my-pi/pi-tui/theme/theme";
-import { truncateToWidth, visibleWidth } from "@oh-my-pi/pi-tui/utils";
+import type { App as Ui, Component } from "../tui/app";
+import { HubFrame, type SidebarEntry } from "../tui/frame";
+import { rank } from "../tui/fuzzy";
+import { Input } from "../tui/input";
+import type { Key } from "../tui/keys";
+import { truncate, width as textWidth } from "../tui/text";
+import { theme } from "../tui/theme";
 import { AGENTS, agent as findAgent, installed } from "../agents";
 import { getSession, liveIds, recent } from "../core/catalog";
 import { getDefault, loadApps, saveApps, setDefault } from "../core/config";
@@ -48,7 +48,7 @@ export interface HubOptions {
 }
 
 export class Hub implements Component {
-	#tui: TUI;
+	#ui: Ui;
 	#done: (r: HubResult) => void;
 	#opts: HubOptions;
 	#apps: App[] = [];
@@ -65,30 +65,21 @@ export class Hub implements Component {
 	#modal: Modal | undefined;
 	#bodyRows = 20;
 
-	#frame = new HubFrame(
+	#frame: HubFrame<ScopeKind> = new HubFrame<ScopeKind>(
 		"topdown",
 		{ min: 16, max: 26 },
 		(width, rows) =>
-			this.#frame.renderSidebar(
-				this.#entries(),
-				width,
-				rows,
-				{ id: this.#scope, focused: this.#focus === "scope", follow: true, clamp: true },
-				e => ({
-					icon: e.kind === "apps" ? theme.fg("accent", "▦") : e.kind === "recent" ? theme.fg("accent", "◷") : theme.fg("muted", "◆"),
-					annotation: theme.fg("dim", e.annotation ?? ""),
-				}),
-			),
-		(width, height) => this.#renderBody(width, height ?? 20),
-		{ bodyMinWidth: 40 },
+			this.#frame.sidebar(this.#entries(), width, rows, { id: this.#scope, focused: this.#focus === "scope" }, e => ({
+				icon: e.kind === "apps" ? theme.fg("accent", "▦") : e.kind === "recent" ? theme.fg("accent", "◷") : theme.fg("muted", "◆"),
+				annotation: theme.fg("dim", e.annotation ?? ""),
+			})),
+		(width, rows) => this.#renderBody(width, rows),
 	);
 
-	constructor(tui: TUI, done: (r: HubResult) => void, opts: HubOptions = {}) {
-		this.#tui = tui;
+	constructor(ui: Ui, done: (r: HubResult) => void, opts: HubOptions = {}) {
+		this.#ui = ui;
 		this.#done = done;
 		this.#opts = opts;
-		this.#search.prompt = "";
-		this.#search.focused = true;
 		this.#apps = loadApps();
 		this.#reload();
 	}
@@ -119,14 +110,14 @@ export class Hub implements Component {
 		const prev = this.#rows[this.#cursor];
 		if (this.#scope === "apps") {
 			let apps = this.#apps;
-			if (query) apps = fuzzyRank(apps, query, a => `${a.label} ${a.agent ?? a.command ?? ""}`).map(r => r.item);
+			if (query) apps = rank(apps, query, a => `${a.label} ${a.agent ?? a.command ?? ""}`);
 			this.#rows = [...apps.map(app => ({ kind: "app", app }) as Row), ...(query ? [] : [{ kind: "add" } as Row])];
 		} else {
 			const agents = this.#scope === "recent" ? this.#sessionAgents() : [this.#scope.slice("agent:".length)];
 			const page = recent(agents, query ? Math.max(this.#limit, SEARCH_LIMIT) : this.#limit);
 			this.#live = liveIds(agents);
 			let sessions = page.sessions;
-			if (query) sessions = fuzzyRank(sessions, query, s => `${s.agent} ${project(s.cwd)} ${s.title}`).map(r => r.item);
+			if (query) sessions = rank(sessions, query, s => `${s.agent} ${project(s.cwd)} ${s.title}`);
 			this.#more = !query && page.more;
 			this.#rows = sessions.map(s => ({ kind: "session", s }) as Row);
 			if (this.#more) this.#rows.push({ kind: "more" });
@@ -161,16 +152,13 @@ export class Hub implements Component {
 
 	// ---------- input ----------
 
-	handleInput(data: string): void {
-		const key = parseKey(data);
-		if (this.#modal) void this.#modalKey(data, key);
-		else if (this.#focus === "scope") this.#scopeKey(data, key);
-		else void this.#bodyKey(data, key);
-		this.#frame.invalidate();
-		this.#tui.requestRender();
+	handleKey(k: Key): void {
+		if (this.#modal) void this.#modalKey(k);
+		else if (this.#focus === "scope") this.#scopeKey(k.name);
+		else void this.#bodyKey(k);
 	}
 
-	#scopeKey(_data: string, key: string | undefined): void {
+	#scopeKey(key: string): void {
 		const entries = this.#entries().filter(e => e.kind !== "separator");
 		const i = entries.findIndex(e => e.id === this.#scope);
 		if (key === "up" && i > 0) this.#setScope(entries[i - 1]!.id);
@@ -179,7 +167,8 @@ export class Hub implements Component {
 		else if (key === "escape" || key === "ctrl+c") this.#done({ action: "quit" });
 	}
 
-	async #bodyKey(data: string, key: string | undefined): Promise<void> {
+	async #bodyKey(k: Key): Promise<void> {
+		const key = k.name;
 		const query = this.#search.getValue();
 		const row = this.#row();
 		switch (key) {
@@ -215,7 +204,7 @@ export class Hub implements Component {
 					this.#search.setValue("");
 					return this.#reload();
 				}
-				if (this.#scope.startsWith("agent:") && this.#prevScope) return this.#bodyKey(data, "left");
+				if (this.#scope.startsWith("agent:") && this.#prevScope) return this.#bodyKey({ name: "left" });
 				return this.#done({ action: "quit" });
 			case "ctrl+c":
 				return this.#done({ action: "quit" });
@@ -241,7 +230,7 @@ export class Hub implements Component {
 				break;
 		}
 		// Anything else edits the search.
-		this.#search.handleInput(data);
+		this.#search.handle(k);
 		if (this.#search.getValue() !== query) {
 			this.#cursor = 0;
 			this.#scroll = 0;
@@ -296,8 +285,7 @@ export class Hub implements Component {
 		if (!id) return;
 		const row = this.#row();
 		await refreshUsage(usageId(row?.kind === "app" ? row.app : undefined, id));
-		this.#frame.invalidate();
-		this.#tui.requestRender();
+		this.#ui.requestRender();
 	}
 
 	#message(lines: string[]): void {
@@ -317,7 +305,6 @@ export class Hub implements Component {
 	#addCustom(): void {
 		const input = new Input();
 		input.prompt = "command › ";
-		input.focused = true;
 		this.#modal = {
 			kind: "input",
 			title: "Command to run in a terminal (e.g. lazygit, aider --model sonnet)",
@@ -343,7 +330,6 @@ export class Hub implements Component {
 		const row = this.#row();
 		const input = new Input();
 		input.prompt = "name › ";
-		input.focused = true;
 		if (row?.kind === "app") {
 			input.setValue(row.app.label);
 			this.#modal = {
@@ -417,7 +403,8 @@ export class Hub implements Component {
 		this.#modal = { kind: "sheet", row, agentId, options, values: options.map(() => 0), cursor: 0 };
 	}
 
-	async #modalKey(data: string, key: string | undefined): Promise<void> {
+	async #modalKey(k: Key): Promise<void> {
+		const key = k.name;
 		const m = this.#modal!;
 		const close = () => {
 			this.#modal = undefined;
@@ -437,7 +424,7 @@ export class Hub implements Component {
 					close();
 					return await m.onSubmit(m.input.getValue());
 				}
-				m.input.handleInput(data);
+				m.input.handle(k);
 				return;
 			}
 			if (m.kind === "add") {
@@ -471,20 +458,14 @@ export class Hub implements Component {
 		} catch (e) {
 			this.#message([theme.fg("error", e instanceof Error ? e.message : String(e))]);
 		} finally {
-			this.#frame.invalidate();
-			this.#tui.requestRender();
+			this.#ui.requestRender();
 		}
 	}
 
 	// ---------- render ----------
 
-	invalidate(): void {
-		this.#frame.invalidate();
-	}
-
-	render(width: number): readonly string[] {
-		const rows = Math.max(16, this.#tui.terminal?.rows || process.stdout.rows || 40);
-		return this.#frame.render(width, rows, this.#entries(), this.#footer());
+	render(width: number, height: number): string[] {
+		return this.#frame.render(width, height, this.#entries(), this.#footer());
 	}
 
 	#footer(): string {
@@ -512,7 +493,7 @@ export class Hub implements Component {
 			while (out.length < height) out.push("");
 			return out.slice(0, height);
 		}
-		const searchLine = this.#search.render(Math.max(1, width - 4))[0] ?? "";
+		const searchLine = this.#search.render(Math.max(1, width - 4), this.#focus === "body");
 		out.push(` ${theme.fg("accent", "›")} ${searchLine}`);
 
 		const detail = this.#renderDetail(width - 2).map(l => ` ${l}`);
@@ -521,14 +502,14 @@ export class Hub implements Component {
 		if (this.#cursor < this.#scroll) this.#scroll = this.#cursor;
 		if (this.#cursor >= this.#scroll + listRows) this.#scroll = this.#cursor - listRows + 1;
 		const aw = Math.max(6, ...this.#rows.map(r => (r.kind === "session" ? r.s.agent.length : 0)));
-		const lw = Math.max(10, ...this.#apps.map(a => visibleWidth(a.label)));
+		const lw = Math.max(10, ...this.#apps.map(a => textWidth(a.label)));
 		const thumb = scrollbar(this.#rows.length, listRows, this.#scroll);
 		for (let i = 0; i < listRows; i++) {
 			const r = this.#rows[this.#scroll + i];
 			const selected = this.#scroll + i === this.#cursor && this.#focus === "body";
 			let line = r ? this.#renderRow(r, aw, lw) : "";
 			line = fit(line, width - 2);
-			if (selected) line = theme.bg("selectedBg", line);
+			if (selected) line = theme.selected(line);
 			out.push(`${line}${thumb[i] ?? " "} `);
 		}
 		out.push(theme.fg("border", "─".repeat(width)));
@@ -587,21 +568,21 @@ export class Hub implements Component {
 		const hint = (s: string) => theme.fg("dim", s);
 		if (m.kind === "message") return [...m.lines, "", hint("any key to go back")];
 		if (m.kind === "confirm") return [...m.lines, "", `${theme.fg("accent", "y")} yes   ${theme.fg("accent", "n")} no`];
-		if (m.kind === "input") return [theme.bold(m.title), "", truncateToWidth(m.input.render(width)[0] ?? "", width), "", hint("⏎ save · esc cancel")];
+		if (m.kind === "input") return [theme.bold(m.title), "", truncate(m.input.render(width), width), "", hint("⏎ save · esc cancel")];
 		if (m.kind === "add")
 			return [
 				theme.bold("Add which app?"),
 				"",
-				...m.items.map((it, i) => (i === m.cursor ? theme.bg("selectedBg", fit(` ${it.label}`, width)) : ` ${it.label}`)),
+				...m.items.map((it, i) => (i === m.cursor ? theme.selected(fit(` ${it.label}`, width)) : ` ${it.label}`)),
 			];
 		const options = m.options;
 		const lines = [theme.bold(`${m.row.kind === "session" ? "Resume" : "Launch"} ${m.agentId} with…`), ""];
 		options.forEach((o, i) => {
 			const choices = o.choices
-				.map((c, j) => (j === m.values[i] ? theme.bg("selectedBg", theme.fg("accent", ` ${c} `)) : theme.fg("dim", ` ${c} `)))
+				.map((c, j) => (j === m.values[i] ? theme.selected(theme.fg("accent", ` ${c} `)) : theme.fg("dim", ` ${c} `)))
 				.join("");
 			const label = (i === m.cursor ? theme.fg("accent", "▸ ") : "  ") + o.label.padEnd(12);
-			lines.push(truncateToWidth(`${label}${choices}`, width));
+			lines.push(truncate(`${label}${choices}`, width));
 		});
 		const extra = options.flatMap((o, i) => (m.values[i] ? o.args(o.choices[m.values[i]!]!) : []));
 		lines.push("", hint(`${findAgent(m.agentId)!.bin} ${extra.join(" ")}`.trim()));

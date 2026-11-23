@@ -1,14 +1,10 @@
-// Small render helpers on pi-tui's theme: bars, padding, the usage panel.
-import { theme } from "@oh-my-pi/pi-tui/theme/theme";
-import { truncateToWidth, visibleWidth } from "@oh-my-pi/pi-tui/utils";
+// Small render helpers: bars, padding, the usage panel.
+import { theme } from "../tui/theme";
+import { fit } from "../tui/text";
 import type { UsageRecord } from "../integrations/omarchy";
 import { ago, epoch, now, oneline, span, tokens } from "../core/util";
 
-/** Pad (or cut) a styled string to exactly `width` columns. */
-export function fit(s: string, width: number): string {
-	const cut = truncateToWidth(s, width);
-	return cut + " ".repeat(Math.max(0, width - visibleWidth(cut)));
-}
+export { fit };
 
 /** A meter whose colour warns as it fills. */
 export function bar(p: number, width: number): string {

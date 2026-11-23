@@ -1,12 +1,11 @@
 # topdown roadmap
 
 topdown is growing from an Omarchy agent launcher (v0.4.4, bash + fzf + Python)
-into a general TUI harness for coding agents, built on omp's stack: TypeScript
-on Bun with [`@oh-my-pi/pi-tui`](https://www.npmjs.com/package/@oh-my-pi/pi-tui)
-(MIT), pinned to an exact version.
+into a general TUI harness for coding agents: TypeScript on Bun, with a TUI
+layer of its own modelled on omp's.
 
 ## M1 — parity on the new stack
-- Hub screen on pi-tui's `HubFrame` (omp's model-picker look): sidebar of
+- Hub screen in the layout of omp's model picker: sidebar of
   agents and conversation scopes, searchable list, detail line, key bar.
 - Everything 0.4.4 does: launch / resume (in place or new window), recent
   conversations with paging, per-agent view, usage meters, default agent,
@@ -39,7 +38,7 @@ Measured on real history: grep over 108 MB of Claude transcripts takes
 (`messages_fts_trigram`, ~40 ms). Fast enough to search as you type.
 
 ## Packaging notes
-- `bun build --compile` gives one ~114 MB binary. pi-tui needs omp's native
-  addon (`pi_natives.linux-x64-{modern,baseline}.node`, ~143 MB each), loaded
-  from beside the executable. omp itself is ~301 MB, so this is the same class.
-  Ship the `modern` variant, plus `baseline` for older CPUs.
+- topdown has its own TUI layer (`src/tui/`, ~800 lines) modelled on omp's
+  pi-tui rather than depending on it, so there is no native addon: the
+  package is one `bun build --compile` binary (the Bun runtime, ~107 MB,
+  is most of it).

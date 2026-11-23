@@ -1,9 +1,11 @@
 # topdown
 
 One TUI to launch, resume and manage coding agents: Claude Code, Codex,
-OpenCode, Pi, Oh My Pi, Hermes, Antigravity and the rest. Built on omp's stack
-(TypeScript on Bun, [`@oh-my-pi/pi-tui`](https://www.npmjs.com/package/@oh-my-pi/pi-tui)),
-with the look of omp's model picker.
+OpenCode, Pi, Oh My Pi, Hermes, Antigravity and the rest. TypeScript on Bun
+with a small TUI layer of its own (`src/tui/`), whose look and rendering
+approach come from studying omp's TUI ([pi-tui](https://github.com/can1357/oh-my-pi),
+MIT): the hub layout of its model picker, differential rendering inside
+synchronized output, semantic colours.
 
 ```
 ╭─ topdown ────────┬──────────────────────────────────────────────────────────╮
@@ -85,9 +87,14 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
     git clone https://github.com/viniemm/topdown && cd topdown
     bin/install
 
-The package installs `/usr/bin/topdown`, the compiled UI in `/usr/lib/topdown/`
-next to omp's native addon (which pi-tui loads), and replaces the old
-`omarchy-agent-launcher` package (that name stays as a symlink).
+The package installs `/usr/bin/topdown` and the compiled UI in
+`/usr/lib/topdown/` (one self-contained binary: the Bun runtime plus topdown),
+and replaces the old `omarchy-agent-launcher` package (that name stays as a
+symlink).
+
+Colours follow your terminal's palette, so they match the Omarchy theme. To
+override, put hex colours in `~/.config/topdown/theme.json` (roles: `accent`,
+`border`, `dim`, `muted`, `success`, `warning`, `error`, `selected`).
 
 ## Development
 
