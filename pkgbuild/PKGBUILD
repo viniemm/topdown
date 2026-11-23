@@ -1,0 +1,20 @@
+pkgname=omarchy-agent-launcher
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Floating TUI picker to launch and resume coding agents on Omarchy, with plan-usage meters'
+arch=('any')
+url='https://github.com/viniemm/omarchy-agent-launcher'
+license=('MIT')
+depends=('omarchy' 'bash' 'python' 'fzf' 'gum' 'xdg-terminal-exec' 'uwsm' 'util-linux')
+source=()
+sha256sums=()
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 bin/omarchy-agent-launcher "$pkgdir/usr/bin/omarchy-agent-launcher"
+  install -Dm644 lib/agent_launcher.py "$pkgdir/usr/lib/omarchy-agent-launcher/agent_launcher.py"
+  install -Dm644 "$startdir/omarchy-agent-launcher.desktop" "$pkgdir/usr/share/applications/omarchy-agent-launcher.desktop"
+  install -Dm644 "$startdir/omarchy-agent-launcher.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/omarchy-agent-launcher.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

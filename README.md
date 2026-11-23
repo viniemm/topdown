@@ -44,16 +44,30 @@ sessions for the highlighted app.
 |---|---|
 | `bin/omarchy-agent-launcher` | Picker, launch/resume, add/remove (bash + fzf/gum) |
 | `lib/agent_launcher.py` | Rows, usage meters, session discovery, preview |
-| `install.sh` | Symlinks into `~/.local/bin`, migrates old config |
-| `~/.config/omarchy/agent-launcher.json` | Your app list |
+| `pkgbuild/` | Arch package: `PKGBUILD`, `.desktop` launcher entry, icon |
+| `bin/install` | Builds and installs the package (`makepkg -fsi`) |
+| `~/.config/omarchy/agent-launcher.json` | Your app list (created on first run) |
 
-Nothing under `/usr/share/omarchy` is modified.
+Installed, the package puts the command in `/usr/bin`, the helper in
+`/usr/lib/omarchy-agent-launcher/`, and an **Agent Launcher** entry in the app
+launcher (Super+Space). Nothing under `/usr/share/omarchy` is modified.
 
 ## Install
 
-    ./install.sh
+    git clone https://github.com/viniemm/omarchy-agent-launcher
+    cd omarchy-agent-launcher
+    bin/install
 
-Then in `~/.config/hypr/bindings.lua`:
+Remove with `sudo pacman -R omarchy-agent-launcher`.
+
+Keybindings are yours to choose; add them to `~/.config/hypr/bindings.lua`:
 
     o.rebind("SUPER + A", "Agent", "omarchy-agent-launcher default")
     o.rebind("SUPER + SHIFT + A", "Agent picker", "omarchy-agent-launcher open")
+
+(Super+Shift+A replaces Omarchy's default ChatGPT web app binding.)
+
+## Development
+
+`bin/omarchy-agent-launcher` runs straight from a checkout (it uses `lib/`
+next to it). Re-run `bin/install` to update the installed package.

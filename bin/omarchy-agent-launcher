@@ -14,7 +14,7 @@
 #
 # The right pane reads the usage records the bar's agents plugin watches
 # (~/.local/state/omarchy/agents/usage/) and each agent's own session store.
-# Data/preview logic: lib/agent_launcher.py next to this script
+# Data/preview logic: agent_launcher.py (see HELPER below)
 #
 # The list lives in ~/.config/omarchy/agent-launcher.json. Entries either name an
 # Omarchy-known agent ("agent": "claude"), launched exactly like omarchy-agent
@@ -27,7 +27,9 @@ SELF="$(readlink -f "$0")"
 LIST="$HOME/.config/omarchy/agent-launcher.json"
 DEFAULT_FILE="$HOME/.config/omarchy/defaults/agent"
 SHIM="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-agent-launcher/shim"
+# Installed: /usr/lib/omarchy-agent-launcher; from a checkout: ../lib next to bin/.
 HELPER="$(dirname "$SELF")/../lib/agent_launcher.py"
+[[ -f $HELPER ]] || HELPER="/usr/lib/omarchy-agent-launcher/agent_launcher.py"
 LOG="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-agent-launcher/launch.log"
 
 known_agents() {

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Agent Launcher
+GenericName=Coding agent picker
+Comment=Launch and resume coding agents, with plan-usage meters
+Exec=omarchy-agent-launcher open
+Icon=omarchy-agent-launcher
+Terminal=false
+Categories=Development;
+Keywords=agent;ai;claude;codex;copilot;pi;omp;hermes;antigravity;session;usage;
+StartupWMClass=TUI.float
+StartupNotify=false
