@@ -3,3 +3,5 @@ __pycache__/
 pkgbuild/pkg/
 pkgbuild/src/
 pkgbuild/*.pkg.tar.*
+node_modules/
+dist/
