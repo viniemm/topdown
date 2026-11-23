@@ -1,7 +1,7 @@
 #!/bin/bash
 # omarchy-agent-launcher: a curated TUI launcher for coding agents and other terminal apps.
 #
-#   omarchy-agent-launcher open          Open the picker in a floating terminal (Super+Shift+A)
+#   omarchy-agent-launcher open          Open the picker in a new terminal window (Super+Shift+A)
 #   omarchy-agent-launcher default       Launch the default agent; no default -> picker to choose one (Super+A)
 #   omarchy-agent-launcher pick          Run the picker in the current terminal
 #   omarchy-agent-launcher launch <id>   Launch one app from the list
@@ -9,7 +9,8 @@
 #   omarchy-agent-launcher rm <id>       Remove an app
 #   omarchy-agent-launcher resume <key>  Resume a session row (ses|agent|id|cwd) in its project directory
 #
-# Picker keys: Enter launch/resume · Tab sessions ↔ apps · Ctrl-D set default agent
+# Picker keys: Enter launch/resume in this window · Alt-Enter in a new window
+#              Tab sessions ↔ apps · Ctrl-D set default agent
 #              Ctrl-R refresh usage · Ctrl-A add · Ctrl-X remove · Esc close
 #
 # The right pane reads the usage records the bar's agents plugin watches
@@ -71,7 +72,13 @@ extra=()
 if [[ -n \${AGENT_LAUNCHER_CWD:-} && \$1 == --app-id=* ]]; then
   set -- "\$1" env -C "\$AGENT_LAUNCHER_CWD" "\${@:2}"
 fi
-unset AGENT_LAUNCHER_AGENT AGENT_LAUNCHER_ARGS AGENT_LAUNCHER_CWD
+inline=\${AGENT_LAUNCHER_INLINE:-}
+unset AGENT_LAUNCHER_AGENT AGENT_LAUNCHER_ARGS AGENT_LAUNCHER_CWD AGENT_LAUNCHER_INLINE
+if [[ -n \$inline ]]; then
+  # Run the agent right here, in the picker's terminal.
+  [[ \$1 == --app-id=* ]] && shift
+  exec "\$@" "\${extra[@]}"
+fi
 exec omarchy-launch-tui "\$@" "\${extra[@]}"
 EOF
   chmod +x "$SHIM"/*
@@ -126,6 +133,7 @@ cmd_launch() {
     ensure_shim
     AGENT_LAUNCHER_AGENT=$agent PATH="$SHIM:$PATH" exec omarchy-agent
   elif [[ -n $command ]]; then
+    [[ -n ${AGENT_LAUNCHER_INLINE:-} ]] && exec bash -lc "$command"
     exec omarchy-launch-tui --app-id=org.omarchy.agent bash -lc "$command"
   else
     echo "No app named '$id' in $LIST" >&2
@@ -137,7 +145,7 @@ cmd_pick() {
   ensure_list
   mkdir -p "$(dirname "$LOG")"
   source omarchy-restart-gum 2>/dev/null || true
-  local header=$'Enter open · Tab sessions ↔ apps · Ctrl-D set default\nCtrl-R refresh usage · Ctrl-A add · Ctrl-X remove'
+  local header=$'Enter open here · Alt-Enter new window · Tab sessions ↔ apps\nCtrl-D set default · Ctrl-R refresh usage · Ctrl-A add · Ctrl-X remove'
   local setting_default=false
   if [[ ${1:-} == --choose-default ]]; then
     setting_default=true
@@ -154,7 +162,7 @@ cmd_pick() {
       --border=rounded --border-label=" Agents " \
       --preview="python3 -I '$HELPER' preview {1}" \
       --preview-window="right,55%,border-left,wrap" \
-      --expect=enter \
+      --expect=enter,alt-enter \
       --bind "tab:transform:[[ {1} == app\|* ]] && echo \"$ses_mode\" || echo \"$apps_mode\"" \
       --bind "ctrl-d:execute-silent('$SELF' set-default {1})+reload('$SELF' rows)" \
       --bind "ctrl-r:execute-silent('$SELF' refresh {1})+refresh-preview+reload('$SELF' rows)" \
@@ -163,24 +171,36 @@ cmd_pick() {
   ) || exit 0
   key=$(sed -n 1p <<<"$out")
   row=$(sed -n 2p <<<"$out" | cut -f1)
-  [[ $key == enter && -n $row ]] || exit 0
+  [[ ($key == enter || $key == alt-enter) && -n $row ]] || exit 0
 
   case "$row" in
   add\|*)
     cmd_add || true
     exec "$SELF" pick "$@"
     ;;
-  ses\|*)
-    "$SELF" resume "$row" >>"$LOG" 2>&1
-    ;;
+  ses\|*) run_picked "$key" resume "$row" ;;
   app\|*)
     $setting_default && cmd_set_default "$row"
-    # The launcher detaches (setsid + uwsm-app), so this picker window can close.
-    # The new terminal's own chatter (e.g. foot warning that Hyprland lacks the
-    # xdg-toplevel-icon protocol) goes to the log, not this closing window.
-    "$SELF" launch "${row#app|}" >>"$LOG" 2>&1
+    run_picked "$key" launch "${row#app|}"
     ;;
   esac
+}
+
+# run_picked <fzf key> <launch|resume> <arg>
+run_picked() {
+  local key=$1
+  shift
+  if [[ $key == enter ]]; then
+    # Hand this terminal over to the agent. The window already carries the
+    # agent class (org.omarchy.agent) and closes when the agent exits.
+    printf '\033]2;%s\007' "$(helper title "$2" 2>/dev/null || echo Agent)"
+    AGENT_LAUNCHER_INLINE=1 exec "$SELF" "$@"
+  fi
+  # Alt-Enter: a separate agent window. omarchy-launch-tui ends in
+  # `systemd-run --scope`, which stays in the foreground until that terminal
+  # closes, so setsid -f detaches it and the picker exits now. The new
+  # terminal's own chatter goes to the log rather than this closing window.
+  setsid -f "$SELF" "$@" </dev/null >>"$LOG" 2>&1
 }
 
 cmd_refresh() {
@@ -261,8 +281,8 @@ EOF
 }
 
 cmd_open() {
-  # TUI.float is Omarchy's class for floating, centered TUI windows.
-  exec setsid uwsm-app -- xdg-terminal-exec --app-id=TUI.float --title=Agents -e "$SELF" pick "$@"
+  # A tiled window with the agent class: Enter turns this very window into the agent.
+  exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.omarchy.agent --title=Agents -e "$SELF" pick "$@"
 }
 
 cmd_default() {

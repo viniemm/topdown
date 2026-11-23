@@ -446,9 +446,23 @@ def cmd_usage_id(key):
         print(a.get("usage") or USAGE_IDS.get(a.get("agent", ""), ""))
 
 
+def cmd_title(key):
+    """Window title for what's being launched: an app id, app|id, or a session row."""
+    if key.startswith("ses|"):
+        agent, sid = (key.split("|") + ["", ""])[1:3]
+        a = next((x for x in load_apps() if x.get("agent") == agent), None)
+        s = next((x for x in sessions_for(agent, 200) if x["id"] == sid), None)
+        name = (a or {}).get("label", agent)
+        print(f"{name} — {oneline(s['title'], 60)}" if s else name)
+        return
+    a = app(key.split("|", 1)[-1])
+    print(a["label"] if a else "Agent")
+
+
 def main():
     cmd, *args = sys.argv[1:] or ["rows"]
-    {"rows": cmd_rows, "preview": cmd_preview, "sessions": cmd_sessions, "usage-id": cmd_usage_id}[cmd](*args)
+    {"rows": cmd_rows, "preview": cmd_preview, "sessions": cmd_sessions,
+     "usage-id": cmd_usage_id, "title": cmd_title}[cmd](*args)
 
 
 if __name__ == "__main__":

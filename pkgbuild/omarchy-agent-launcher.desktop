@@ -9,5 +9,5 @@ Icon=omarchy-agent-launcher
 Terminal=false
 Categories=Development;
 Keywords=agent;ai;claude;codex;copilot;pi;omp;hermes;antigravity;session;usage;
-StartupWMClass=TUI.float
+StartupWMClass=org.omarchy.agent
 StartupNotify=false

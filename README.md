@@ -1,6 +1,7 @@
 # omarchy-agent-launcher
 
-A floating TUI launcher for coding agents and other terminal apps on Omarchy.
+A TUI launcher for coding agents and other terminal apps on Omarchy. Pick an
+agent and the picker's own terminal becomes that agent — no second window.
 
 - **Super+A** — launch the default agent (no default yet → the picker chooses one)
 - **Super+Shift+A** — the picker
@@ -9,7 +10,8 @@ A floating TUI launcher for coding agents and other terminal apps on Omarchy.
 
 | Key | Action |
 |---|---|
-| Enter | Launch the app / resume the session |
+| Enter | Launch the app / resume the session in this window |
+| Alt-Enter | Launch / resume in a separate window |
 | Tab | Switch between apps and the highlighted agent's sessions |
 | Ctrl-D | Make the highlighted agent the default |
 | Ctrl-R | Refresh the highlighted agent's usage |
@@ -35,7 +37,9 @@ sessions for the highlighted app.
   Claude `~/.claude/projects`, Pi `~/.pi/agent/sessions`, omp
   `~/.omp/agent/sessions`, Hermes `~/.hermes/state.db`, Antigravity
   `~/.gemini/antigravity-cli/conversation_summaries.db`.
-- Output of launched terminals goes to
+- The picker opens tiled with the agent window class, so when Enter turns
+  it into the agent, agent window rules and theming already apply.
+- Output of separately launched (Alt-Enter) terminals goes to
   `~/.local/state/omarchy-agent-launcher/launch.log`.
 
 ## Files
