@@ -8,7 +8,7 @@ import { rank } from "../tui/fuzzy";
 import { Input } from "../tui/input";
 import type { Key } from "../tui/keys";
 import { truncate, width as textWidth } from "../tui/text";
-import { theme } from "../tui/theme";
+import { assignAgentColors, theme } from "../tui/theme";
 import { AGENTS, agent as findAgent, installed } from "../agents";
 import { getSession, liveIds, recent } from "../core/catalog";
 import { getDefault, loadApps, saveApps, setDefault } from "../core/config";
@@ -70,7 +70,7 @@ export class Hub implements Component {
 		{ min: 16, max: 26 },
 		(width, rows) =>
 			this.#frame.sidebar(this.#entries(), width, rows, { id: this.#scope, focused: this.#focus === "scope" }, e => ({
-				icon: e.kind === "apps" ? theme.fg("accent", "▦") : e.kind === "recent" ? theme.fg("accent", "◷") : theme.fg("muted", "◆"),
+				icon: e.kind === "apps" ? theme.fg("accent", "▦") : e.kind === "recent" ? theme.fg("accent", "◷") : theme.agent(e.label, "◆"),
 				annotation: theme.fg("dim", e.annotation ?? ""),
 			})),
 		(width, rows) => this.#renderBody(width, rows),
@@ -81,6 +81,7 @@ export class Hub implements Component {
 		this.#done = done;
 		this.#opts = opts;
 		this.#apps = loadApps();
+		assignAgentColors(this.#apps.map(a => a.agent).filter((a): a is string => !!a));
 		this.#reload();
 	}
 
@@ -525,7 +526,8 @@ export class Hub implements Component {
 				const t = r.app.agent ? tightest(usageRecord(usageId(r.app, r.app.agent))) : undefined;
 				const meter = t === undefined ? " ".repeat(6) : bar(t, 6);
 				const kind = r.app.agent ? `agent: ${r.app.agent}` : `tui: ${r.app.command ?? ""}`;
-				return ` ${def} ${r.app.label.padEnd(lw)}  ${meter}  ${theme.fg("dim", kind)}`;
+				const dot = r.app.agent ? theme.agent(r.app.agent, "◆") : theme.fg("dim", "◇");
+				return ` ${def} ${dot} ${r.app.label.padEnd(lw)}  ${meter}  ${theme.fg("dim", kind)}`;
 			}
 			case "add":
 				return `   ${theme.fg("accent", "+ Add app…")}`;
@@ -535,7 +537,8 @@ export class Hub implements Component {
 				return theme.fg("dim", `   ${r.text}`);
 			case "session": {
 				const live = this.#live.has(r.s.id) ? theme.fg("success", "●") : " ";
-				return ` ${live} ${theme.fg("dim", stamp(r.s.when).padEnd(11))}${theme.fg("accent", r.s.agent.padEnd(aw))}  ${theme.fg("muted", project(r.s.cwd).padEnd(12).slice(0, 12))} ${oneline(r.s.title, 200)}`;
+				const proj = project(r.s.cwd);
+				return ` ${live} ${theme.age(r.s.when, stamp(r.s.when).padEnd(11))}${theme.agent(r.s.agent, r.s.agent.padEnd(aw))}  ${theme.project(proj, proj.padEnd(12).slice(0, 12))} ${oneline(r.s.title, 200)}`;
 			}
 		}
 	}
@@ -555,7 +558,7 @@ export class Hub implements Component {
 			const live = this.#live.has(s.id) ? `  ${theme.fg("success", "● open")}` : "";
 			return [
 				theme.bold(oneline(s.title, width)),
-				`${theme.fg("accent", s.agent)}  ${theme.fg("muted", shortPath(s.cwd))}  ${theme.fg("dim", `${stamp(s.when)} · ${ago(s.when)}`)}${live}`,
+				`${theme.agent(s.agent)}  ${theme.project(project(s.cwd), shortPath(s.cwd))}  ${theme.age(s.when, `${stamp(s.when)} · ${ago(s.when)}`)}${live}`,
 				...s.prompts.slice(0, 2).map(p => `${theme.fg("accent", "›")} ${oneline(p, width - 2)}`),
 			];
 		}

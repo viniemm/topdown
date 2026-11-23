@@ -15,7 +15,8 @@ import { oneline, stamp } from "./core/util";
 import { focusWindow } from "./integrations/hyprland";
 import { isOmarchy, WINDOW_CLASS } from "./integrations/omarchy";
 import { App as Ui } from "./tui/app";
-import { loadTheme } from "./tui/theme";
+import { detectPalette } from "./tui/palette";
+import { initTheme } from "./tui/theme";
 import { Hub, type HubResult } from "./ui/hub";
 
 /** How to run topdown itself: the wrapper sets TOPDOWN_SELF; otherwise this runtime + script. */
@@ -33,7 +34,7 @@ async function run(spec: ExecSpec, where: Where, title: string): Promise<never> 
 }
 
 async function pick(chooseDefault: boolean): Promise<never> {
-	loadTheme();
+	initTheme(await detectPalette());
 	const ui = new Ui();
 	const result = await new Promise<HubResult>(resolve => ui.start(new Hub(ui, resolve, { chooseDefault })));
 	ui.stop();

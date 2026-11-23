@@ -6,12 +6,11 @@ import { ago, epoch, now, oneline, span, tokens } from "../core/util";
 
 export { fit };
 
-/** A meter whose colour warns as it fills. */
+/** A meter whose colour runs green → yellow → red as it fills. */
 export function bar(p: number, width: number): string {
 	const v = Math.max(0, Math.min(1, p));
 	const filled = Math.round(v * width);
-	const color = v < 0.6 ? "success" : v < 0.85 ? "warning" : "error";
-	return theme.fg(color, "█".repeat(filled)) + theme.fg("dim", "░".repeat(width - filled));
+	return theme.level(v, "█".repeat(filled)) + theme.fg("dim", "░".repeat(width - filled));
 }
 
 export function usageLines(rec: UsageRecord | undefined, width: number): string[] {
