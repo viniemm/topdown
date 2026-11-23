@@ -1,0 +1,285 @@
+#!/bin/bash
+# omarchy-agent-launcher: a curated TUI launcher for coding agents and other terminal apps.
+#
+#   omarchy-agent-launcher open          Open the picker in a floating terminal (Super+Shift+A)
+#   omarchy-agent-launcher default       Launch the default agent; no default -> picker to choose one (Super+A)
+#   omarchy-agent-launcher pick          Run the picker in the current terminal
+#   omarchy-agent-launcher launch <id>   Launch one app from the list
+#   omarchy-agent-launcher add           Add an app interactively
+#   omarchy-agent-launcher rm <id>       Remove an app
+#   omarchy-agent-launcher resume <key>  Resume a session row (ses|agent|id|cwd) in its project directory
+#
+# Picker keys: Enter launch/resume · Tab sessions ↔ apps · Ctrl-D set default agent
+#              Ctrl-R refresh usage · Ctrl-A add · Ctrl-X remove · Esc close
+#
+# The right pane reads the usage records the bar's agents plugin watches
+# (~/.local/state/omarchy/agents/usage/) and each agent's own session store.
+# Data/preview logic: lib/agent_launcher.py next to this script
+#
+# The list lives in ~/.config/omarchy/agent-launcher.json. Entries either name an
+# Omarchy-known agent ("agent": "claude"), launched exactly like omarchy-agent
+# does (auto-permission flags, account pinning, Omarchy's ~/Work cwd, agent window class),
+# or carry a plain "command" run in a terminal with the same cwd and class.
+
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+LIST="$HOME/.config/omarchy/agent-launcher.json"
+DEFAULT_FILE="$HOME/.config/omarchy/defaults/agent"
+SHIM="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-agent-launcher/shim"
+HELPER="$(dirname "$SELF")/../lib/agent_launcher.py"
+LOG="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-agent-launcher/launch.log"
+
+known_agents() {
+  # Agent ids Omarchy knows how to launch, from omarchy-default-agent's own docs.
+  grep -m1 '^# omarchy:args=' "$(command -v omarchy-default-agent)" |
+    sed -E 's/.*\[(.*)\].*/\1/' | tr '|' '\n'
+}
+
+ensure_list() {
+  [[ -f $LIST ]] && return
+  mkdir -p "$(dirname "$LIST")"
+  cat >"$LIST" <<'EOF'
+[
+  {"id": "claude", "label": "Claude Code", "agent": "claude"},
+  {"id": "omp", "label": "Oh My Pi", "agent": "omp"},
+  {"id": "pi", "label": "Pi", "agent": "pi"},
+  {"id": "hermes", "label": "Hermes", "agent": "hermes"},
+  {"id": "agy", "label": "Antigravity", "agent": "agy"}
+]
+EOF
+}
+
+ensure_shim() {
+  mkdir -p "$SHIM"
+  # omarchy-agent asks this for the agent to run; answer with the picked one.
+  cat >"$SHIM/omarchy-default-agent" <<'EOF'
+#!/bin/bash
+echo "$AGENT_LAUNCHER_AGENT"
+EOF
+  # omarchy-agent's last step: drop the shim from PATH before the terminal starts,
+  # so nothing inside the agent session ever sees the fake default.
+  cat >"$SHIM/omarchy-launch-tui" <<EOF
+#!/bin/bash
+PATH=\$(tr ':' '\n' <<<"\$PATH" | grep -vxF "$SHIM" | paste -sd:)
+extra=()
+[[ -n \${AGENT_LAUNCHER_ARGS:-} ]] && mapfile -t extra <<<"\$AGENT_LAUNCHER_ARGS"
+# A resumed session must start in its own project dir; omarchy-agent moves
+# launches from \$HOME to Omarchy's ~/Work, so pin the dir on the command itself.
+if [[ -n \${AGENT_LAUNCHER_CWD:-} && \$1 == --app-id=* ]]; then
+  set -- "\$1" env -C "\$AGENT_LAUNCHER_CWD" "\${@:2}"
+fi
+unset AGENT_LAUNCHER_AGENT AGENT_LAUNCHER_ARGS AGENT_LAUNCHER_CWD
+exec omarchy-launch-tui "\$@" "\${extra[@]}"
+EOF
+  chmod +x "$SHIM"/*
+}
+
+json() { python3 -I - "$LIST" "$@"; }
+
+field() { # field <id> <key>
+  json "$1" "$2" <<'EOF'
+import json, sys
+path, id_, key = sys.argv[1:]
+for e in json.load(open(path)):
+    if e.get("id") == id_:
+        print(e.get(key, ""))
+        break
+EOF
+}
+
+current_default() { [[ -f $DEFAULT_FILE ]] && head -n1 "$DEFAULT_FILE" || true; }
+
+helper() { python3 -I "$HELPER" "$@"; }
+
+cmd_rows() {
+  ensure_list
+  helper rows
+}
+
+cmd_set_default() {
+  local id=${1:?}
+  id=${id#app|}
+  [[ $id == *"|"* ]] && return 0
+  local agent
+  agent=$(field "$id" agent)
+  if [[ -z $agent ]]; then
+    echo "Only agents can be the default agent." >&2
+    sleep 1
+    return 1
+  fi
+  mkdir -p "$(dirname "$DEFAULT_FILE")"
+  printf '%s\n' "$agent" >"$DEFAULT_FILE"
+}
+
+cmd_launch() {
+  local id=${1:?usage: omarchy-agent-launcher launch <id>}
+  ensure_list
+  local agent command
+  agent=$(field "$id" agent)
+  command=$(field "$id" command)
+  # Same convention as omarchy-agent: launches from $HOME start in ~/Work if it exists.
+  [[ $PWD == "$HOME" && -d $HOME/Work ]] && cd "$HOME/Work"
+  if [[ -n $agent ]]; then
+    ensure_shim
+    AGENT_LAUNCHER_AGENT=$agent PATH="$SHIM:$PATH" exec omarchy-agent
+  elif [[ -n $command ]]; then
+    exec omarchy-launch-tui --app-id=org.omarchy.agent bash -lc "$command"
+  else
+    echo "No app named '$id' in $LIST" >&2
+    exit 1
+  fi
+}
+
+cmd_pick() {
+  ensure_list
+  mkdir -p "$(dirname "$LOG")"
+  source omarchy-restart-gum 2>/dev/null || true
+  local header=$'Enter open · Tab sessions ↔ apps · Ctrl-D set default\nCtrl-R refresh usage · Ctrl-A add · Ctrl-X remove'
+  local setting_default=false
+  if [[ ${1:-} == --choose-default ]]; then
+    setting_default=true
+    header="No default agent yet — Enter makes it the default and launches it"
+  fi
+  local apps_mode="reload('$SELF' rows)+change-prompt(  )+change-border-label( Agents )"
+  local ses_mode="reload(python3 -I '$HELPER' sessions {1})+change-prompt(󰆍  )+change-border-label( Sessions )"
+
+  local out key row
+  out=$(
+    cmd_rows | fzf --ansi --delimiter=$'\t' --with-nth=2.. --tabstop=2 \
+      --layout=reverse --no-multi --cycle --info=hidden --no-sort \
+      --prompt="  " --pointer="▶" --gutter=" " --header="$header" --header-first \
+      --border=rounded --border-label=" Agents " \
+      --preview="python3 -I '$HELPER' preview {1}" \
+      --preview-window="right,55%,border-left,wrap" \
+      --expect=enter \
+      --bind "tab:transform:[[ {1} == app\|* ]] && echo \"$ses_mode\" || echo \"$apps_mode\"" \
+      --bind "ctrl-d:execute-silent('$SELF' set-default {1})+reload('$SELF' rows)" \
+      --bind "ctrl-r:execute-silent('$SELF' refresh {1})+refresh-preview+reload('$SELF' rows)" \
+      --bind "ctrl-a:execute('$SELF' add)+reload('$SELF' rows)" \
+      --bind "ctrl-x:execute-silent([[ {1} == app\|* ]] && '$SELF' rm {1})+reload('$SELF' rows)"
+  ) || exit 0
+  key=$(sed -n 1p <<<"$out")
+  row=$(sed -n 2p <<<"$out" | cut -f1)
+  [[ $key == enter && -n $row ]] || exit 0
+
+  case "$row" in
+  add\|*)
+    cmd_add || true
+    exec "$SELF" pick "$@"
+    ;;
+  ses\|*)
+    "$SELF" resume "$row" >>"$LOG" 2>&1
+    ;;
+  app\|*)
+    $setting_default && cmd_set_default "$row"
+    # The launcher detaches (setsid + uwsm-app), so this picker window can close.
+    # The new terminal's own chatter (e.g. foot warning that Hyprland lacks the
+    # xdg-toplevel-icon protocol) goes to the log, not this closing window.
+    "$SELF" launch "${row#app|}" >>"$LOG" 2>&1
+    ;;
+  esac
+}
+
+cmd_refresh() {
+  local uid
+  uid=$(helper usage-id "${1:?}")
+  [[ -n $uid ]] && omarchy-agent-usage-update "$uid" &>/dev/null || true
+}
+
+cmd_resume() {
+  # ses|<agent>|<session>|<cwd>
+  local agent sid cwd
+  IFS='|' read -r _ agent sid cwd <<<"${1:?}"
+  local -a args
+  case "$agent" in
+  claude) args=(--resume "$sid") ;;
+  pi) args=(--session "$sid") ;;
+  omp) args=(--resume "$sid") ;;
+  hermes) args=(--resume "$sid") ;;
+  agy) args=(--conversation "$sid") ;;
+  *) echo "Can't resume $agent sessions" >&2; exit 1 ;;
+  esac
+  [[ -n $cwd && -d $cwd ]] || cwd=""
+  [[ -n $cwd ]] && cd "$cwd"
+  ensure_shim
+  AGENT_LAUNCHER_AGENT=$agent AGENT_LAUNCHER_ARGS=$(printf '%s\n' "${args[@]}") AGENT_LAUNCHER_CWD=$cwd \
+    PATH="$SHIM:$PATH" exec omarchy-agent
+}
+
+cmd_add() {
+  ensure_list
+  source omarchy-restart-gum 2>/dev/null || true
+  local listed choice id label agent="" command=""
+  listed=$(json <<<'import json,sys;[print(e.get("agent","")) for e in json.load(open(sys.argv[1]))]')
+  choice=$(
+    {
+      while read -r a; do
+        grep -qxF "$a" <<<"$listed" && continue
+        if command -v "$a" &>/dev/null || [[ -x $HOME/.local/bin/$a ]]; then echo "agent: $a"; fi
+      done < <(known_agents)
+      echo "custom command…"
+    } | gum filter --header "Add which app?" --placeholder "Type to filter installed agents"
+  ) || return 0
+
+  if [[ $choice == agent:* ]]; then
+    agent=${choice#agent: }
+    id=$agent
+    label=$(gum input --header "Label" --value "$agent") || return 0
+  else
+    command=$(gum input --header "Command to run in a terminal" --placeholder "e.g. lazygit, aider --model sonnet") || return 0
+    [[ -n $command ]] || return 0
+    label=$(gum input --header "Label" --value "${command%% *}") || return 0
+    id=$(tr -cs 'a-zA-Z0-9' '-' <<<"${label,,}" | sed 's/^-*//;s/-*$//')
+  fi
+  [[ -n $id && -n $label ]] || return 0
+
+  json "$id" "$label" "$agent" "$command" <<'EOF'
+import json, sys
+path, id_, label, agent, command = sys.argv[1:]
+apps = json.load(open(path))
+base, n = id_, 2
+while any(a["id"] == id_ for a in apps):
+    id_, n = f"{base}-{n}", n + 1
+entry = {"id": id_, "label": label}
+entry["agent" if agent else "command"] = agent or command
+apps.append(entry)
+json.dump(apps, open(path, "w"), indent=2)
+EOF
+}
+
+cmd_rm() {
+  local id=${1:?}
+  json "${id#app|}" <<'EOF'
+import json, sys
+path, id_ = sys.argv[1:]
+apps = [a for a in json.load(open(path)) if a["id"] != id_]
+json.dump(apps, open(path, "w"), indent=2)
+EOF
+}
+
+cmd_open() {
+  # TUI.float is Omarchy's class for floating, centered TUI windows.
+  exec setsid uwsm-app -- xdg-terminal-exec --app-id=TUI.float --title=Agents -e "$SELF" pick "$@"
+}
+
+cmd_default() {
+  if [[ -n $(omarchy-default-agent) ]]; then
+    exec omarchy-agent
+  fi
+  cmd_open --choose-default
+}
+
+case "${1:-}" in
+open) shift; cmd_open "$@" ;;
+default) cmd_default ;;
+pick) shift; cmd_pick "$@" ;;
+launch) shift; cmd_launch "$@" ;;
+add) cmd_add ;;
+rm) shift; cmd_rm "$@" ;;
+rows) cmd_rows ;;
+resume) shift; cmd_resume "$@" ;;
+refresh) shift; cmd_refresh "$@" ;;
+set-default) shift; cmd_set_default "$@" ;;
+*) sed -n '2,20p' "$SELF" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
