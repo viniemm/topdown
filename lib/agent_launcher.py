@@ -288,19 +288,21 @@ def parse_claude(path):
 
 
 def parse_pi(path):
-    """Pi and Oh My Pi share a session format."""
-    cwd = title = ""
+    """Pi and Oh My Pi share a session format; a name is the latest session_info entry."""
+    cwd = title = name = ""
     prompts = []
     with open(path, encoding="utf-8", errors="replace") as f:
         for n, line in enumerate(f):
-            if n >= 300:
-                break
+            if n >= 300 and '"session_info"' not in line:
+                continue  # past the header and first prompts, only renames matter
             try:
                 d = json.loads(line)
             except ValueError:
                 continue
             kind = d.get("type")
-            if kind == "title":
+            if kind == "session_info":
+                name = d.get("name") or name
+            elif kind == "title":
                 title = d.get("title", "")
             elif kind == "session":
                 cwd = d.get("cwd", "")
@@ -308,7 +310,7 @@ def parse_pi(path):
                 t = text_of(d["message"].get("content"))
                 if is_user_text(t):
                     prompts.append(t.strip()[:600])
-    return {"title": title or (prompts[0] if prompts else ""), "cwd": cwd, "prompts": prompts}
+    return {"title": name or title or (prompts[0] if prompts else ""), "cwd": cwd, "prompts": prompts}
 
 
 def ro_db(path):
@@ -357,18 +359,43 @@ def agy_sessions(limit, sid=None):
     return out
 
 
-def claude_live(sid):
-    """Claude Code records each running session in ~/.claude/sessions/<pid>.json."""
+def claude_live():
+    """Ids of running Claude sessions: Claude Code records each in ~/.claude/sessions/<pid>.json."""
+    live = {}
     for path in glob.glob(os.path.join(HOME, ".claude/sessions/*.json")):
         try:
             with open(path) as f:
                 rec = json.load(f)
-            if rec.get("sessionId") == sid:
-                os.kill(int(rec["pid"]), 0)  # raises if that process is gone
-                return True
+            os.kill(int(rec["pid"]), 0)  # raises if that process is gone
+            live[rec["sessionId"]] = int(rec["pid"])
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             continue
-    return False
+    return live
+
+
+def append_jsonl(path, entry):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def rename_claude(path, sid, title):
+    """What Claude's own /rename writes."""
+    append_jsonl(path, {"type": "custom-title", "customTitle": title, "sessionId": sid})
+
+
+def rename_pi(path, sid, title):
+    """A session_info entry on the current leaf (the last entry), as Pi's /name writes."""
+    last = None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if '"id"' in line:
+                try:
+                    last = json.loads(line).get("id") or last
+                except ValueError:
+                    pass
+    append_jsonl(path, {"type": "session_info", "id": os.urandom(4).hex(), "parentId": last,
+                        "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds")
+                        .replace("+00:00", "Z"), "name": title})
 
 
 # Everything agent-specific about sessions: where they live and how to resume one.
@@ -377,16 +404,18 @@ def claude_live(sid):
 #   query: a function(limit, sid=None) returning session dicts
 #   resume: arguments appended to the agent's usual command ({id} = session id)
 #   delete: for query stores, the agent's own delete command (file sessions go to the Trash)
-#   live:   function(sid) -> True while the agent has that session open
+#   live:   function() -> {session id: pid} of sessions the agent has open right now
+#   rename: function(path, sid, title) for file stores, or a command ({id}, {title})
 SOURCES = {
     "claude": {"files": ".claude/projects/*/*.jsonl", "parse": parse_claude, "id": "stem",
-               "resume": ["--resume", "{id}"], "live": claude_live},
+               "resume": ["--resume", "{id}"], "live": claude_live, "rename": rename_claude},
     "pi": {"files": ".pi/agent/sessions/*/*.jsonl", "parse": parse_pi, "id": "path",
-           "resume": ["--session", "{id}"]},
+           "resume": ["--session", "{id}"], "rename": rename_pi},
     "omp": {"files": ".omp/agent/sessions/*/*.jsonl", "parse": parse_pi, "id": "path",
             "resume": ["--resume", "{id}"]},
     "hermes": {"query": hermes_sessions, "resume": ["--resume", "{id}"],
-               "delete": ["hermes", "sessions", "delete", "--yes", "{id}"]},
+               "delete": ["hermes", "sessions", "delete", "--yes", "{id}"],
+               "rename": ["hermes", "sessions", "rename", "{id}", "{title}"]},
     "agy": {"query": agy_sessions, "resume": ["--conversation", "{id}"]},
 }
 
@@ -482,15 +511,27 @@ def session_file(agent, sid):
 
 # ---------- rows ----------
 
-def session_row(s, label, lw):
+def live_ids(agents):
+    ids = {}
+    for agent in agents:
+        live = (SOURCES.get(agent) or {}).get("live")
+        if live:
+            ids.update(live())
+    return ids
+
+
+def session_row(s, aw, live):
+    # Columns: key (hidden) · marker+time (shown, not searched) · agent, project, title.
+    mark = f"{GREEN}●{R}" if s["id"] in live else " "
     return (f"ses|{s['agent']}|{s['id']}|{s['cwd']}\t"
-            f"  {D}{stamp(s['when']):<10}{R} {label:<{lw}.{lw}}  {CYAN}{project(s['cwd']):<12.12}{R} "
-            f"{oneline(s['title'], 200)}")
+            f" {mark}{D}{stamp(s['when']):<10}{R}\t{MAG}{s['agent']:<{aw}}{R}  "
+            f"{CYAN}{project(s['cwd']):<12.12}{R} {oneline(s['title'], 200)}")
 
 
-def print_sessions(agents, labels, limit):
+def print_sessions(agents, limit):
     """Stream up to `limit` conversations; return whether older ones remain."""
-    lw = max([len(labels.get(a, a)) for a in agents] + [6])
+    aw = max(len(a) for a in agents)
+    live = live_ids(agents)
     cache = Cache()
     shown = 0
     more = False
@@ -498,13 +539,13 @@ def print_sessions(agents, labels, limit):
         if shown == limit:
             more = True
             break
-        print(session_row(s, labels.get(s["agent"], s["agent"]), lw), flush=True)
+        print(session_row(s, aw, live), flush=True)
         shown += 1
     cache.save()
     if more:
-        print(f"more|\t{D}   ↓ more conversations…{R}")
+        print(f"more|\t\t{D}  ↓ more conversations…{R}")
     elif not shown:
-        print(f"hdr|\t{D}   no conversations yet{R}")
+        print(f"hdr|\t\t{D}  no conversations yet{R}")
     return more
 
 
@@ -533,18 +574,18 @@ def cmd_rows(*args):
         for a in apps:
             mark = "★" if a.get("agent") and a["agent"] == default else " "
             kind, runs = ("agent", a["agent"]) if a.get("agent") else ("tui", a.get("command", ""))
-            print(f"app|{a['id']}\t{mark} {a['label']:<{w}}  {mini_meter(a)}\t{D}{kind}: {runs}{R}")
-        print(f"add|\t+ {'Add app…':<{w}}  {'':6}\t{D}Ctrl-A{R}")
+            print(f"app|{a['id']}\t{mark}\t{a['label']:<{w}}  {mini_meter(a)}  {D}{kind}: {runs}{R}")
+        print(f"add|\t+\t{'Add app…':<{w}}  {'':6}  {D}Ctrl-A{R}")
         first_session = len(apps) + 3
         agents = [a for a in labels if a in SOURCES]
         if agents:
-            print(f"hdr|\t{D}──── Recent conversations ─────────────────────────{R}", flush=True)
-            more = print_sessions(agents, labels, limit)
+            print(f"hdr|\t\t{D}──── Recent conversations ─────────────────────────{R}", flush=True)
+            more = print_sessions(agents, limit)
     else:
         label = labels.get(mode, mode)
-        print(f"hdr|\t{D}← {R}{B}{label}{R}{D} conversations ─────────────── Left: back · Tab: all{R}", flush=True)
+        print(f"hdr|\t\t{D}← {R}{B}{label}{R}{D} conversations ──── ←: back · Tab: all{R}", flush=True)
         first_session = 2
-        more = print_sessions([mode], labels, limit)
+        more = print_sessions([mode], limit)
 
     write_kv(base and base + ".rows", {"first_session": first_session, "has_more": int(more)})
 
@@ -660,8 +701,7 @@ def cmd_delete_prompt(key):
     if not s:
         sys.exit("That conversation is already gone.")
     what = f"{agent_label(agent)} — {oneline(s['title'], 60)}"
-    live = SOURCES[agent].get("live")
-    if live and live(sid):
+    if sid in live_ids([agent]):
         sys.exit(f"\"{what}\" is open right now. Close it first: a running agent writes it straight back.")
     question = f"Delete \"{what}\"?"
     if dt.datetime.now().timestamp() - s["when"] < 120:
@@ -685,11 +725,82 @@ def cmd_delete(agent, sid):
         subprocess.run([user_bin(cmd[0])] + cmd[1:], check=True, stdout=subprocess.DEVNULL)
 
 
+def cmd_rename_prompt(key):
+    """The current name, to edit; exits non-zero (with the reason) if it can't be renamed."""
+    if not key.startswith("ses|"):
+        a = app_from_key(key)
+        if not a:
+            sys.exit("Only apps and conversations can be renamed.")
+        print(a["label"])
+        return
+    agent, sid = key.split("|")[1:3]
+    if "rename" not in (SOURCES.get(agent) or {}):
+        sys.exit(f"Renaming {agent_label(agent)} conversations isn't supported yet.")
+    s = session_by_id(agent, sid)
+    if not s:
+        sys.exit("That conversation is gone.")
+    if sid in live_ids([agent]):
+        sys.exit(f"\"{oneline(s['title'], 60)}\" is open right now; rename it there (/rename).")
+    print(oneline(s["title"], 200))
+
+
+def cmd_rename(key, title):
+    title = " ".join(title.split())
+    if not title:
+        sys.exit("A name can't be empty.")
+    if not key.startswith("ses|"):
+        a = app_from_key(key)
+        apps = load_apps()
+        for e in apps:
+            if a and e.get("id") == a["id"]:
+                e["label"] = title
+        with open(LIST + ".tmp", "w") as f:
+            json.dump(apps, f, indent=2)
+        os.replace(LIST + ".tmp", LIST)
+        return
+    agent, sid = key.split("|")[1:3]
+    how = SOURCES[agent]["rename"]
+    if callable(how):
+        path = session_file(agent, sid)
+        if not path:
+            sys.exit("That conversation is gone.")
+        how(path, sid, title)
+    else:
+        cmd = [arg.replace("{id}", sid).replace("{title}", title) for arg in how]
+        subprocess.run([user_bin(cmd[0])] + cmd[1:], check=True, stdout=subprocess.DEVNULL)
+
+
+def cmd_live_window(key):
+    """For an open conversation, the Hyprland window it runs in (exit 1: not open, 2: no window)."""
+    if not key.startswith("ses|"):
+        sys.exit(1)
+    agent, sid = key.split("|")[1:3]
+    pid = live_ids([agent]).get(sid)
+    if not pid:
+        sys.exit(1)
+    try:
+        clients = {c["pid"]: c["address"] for c in json.loads(
+            subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True).stdout)}
+    except (OSError, ValueError, KeyError, TypeError):
+        clients = {}
+    while pid > 1:  # walk up from the agent to the terminal that owns the window
+        if pid in clients:
+            print(clients[pid])
+            return
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                pid = int(f.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+    sys.exit(2)
+
+
 def main():
     cmd, *args = sys.argv[1:] or ["rows"]
     {"rows": cmd_rows, "preview": cmd_preview, "title": cmd_title, "usage-id": cmd_usage_id,
      "session-agent": cmd_session_agent, "resume-args": cmd_resume_args, "launch-args": cmd_launch_args,
-     "delete-prompt": cmd_delete_prompt, "delete": cmd_delete}[cmd](*args)
+     "delete-prompt": cmd_delete_prompt, "delete": cmd_delete, "rename-prompt": cmd_rename_prompt,
+     "rename": cmd_rename, "live-window": cmd_live_window}[cmd](*args)
 
 
 if __name__ == "__main__":
