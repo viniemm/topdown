@@ -10,7 +10,8 @@
 #   omarchy-agent-launcher resume <key>  Resume a session row (ses|agent|id|cwd) in its project directory
 #
 # Picker keys: Enter launch/resume in this window · Alt-Enter in a new window
-#              Tab sessions ↔ apps · Ctrl-D set default agent
+#              Tab apps ↔ recent conversations · → an agent's conversations · ← back
+#              Ctrl-D set default agent
 #              Ctrl-R refresh usage · Ctrl-A add · Ctrl-X remove · Esc close
 #
 # The right pane reads the usage records the bar's agents plugin watches
@@ -53,35 +54,42 @@ ensure_list() {
 EOF
 }
 
+# omarchy-agent builds each agent's command (auto-permission flags, account
+# pinning, ~/Work cwd). Two stand-ins on PATH let it run the picked agent rather
+# than the default, and hand its command back for us to add resume arguments,
+# pin the session's directory, and run it inline or in a new terminal.
 ensure_shim() {
   mkdir -p "$SHIM"
-  # omarchy-agent asks this for the agent to run; answer with the picked one.
   cat >"$SHIM/omarchy-default-agent" <<'EOF'
 #!/bin/bash
 echo "$AGENT_LAUNCHER_AGENT"
 EOF
-  # omarchy-agent's last step: drop the shim from PATH before the terminal starts,
-  # so nothing inside the agent session ever sees the fake default.
   cat >"$SHIM/omarchy-launch-tui" <<EOF
 #!/bin/bash
+# Leave PATH as it was, so nothing inside the agent session sees these stand-ins.
 PATH=\$(tr ':' '\n' <<<"\$PATH" | grep -vxF "$SHIM" | paste -sd:)
-extra=()
-[[ -n \${AGENT_LAUNCHER_ARGS:-} ]] && mapfile -t extra <<<"\$AGENT_LAUNCHER_ARGS"
-# A resumed session must start in its own project dir; omarchy-agent moves
-# launches from \$HOME to Omarchy's ~/Work, so pin the dir on the command itself.
-if [[ -n \${AGENT_LAUNCHER_CWD:-} && \$1 == --app-id=* ]]; then
-  set -- "\$1" env -C "\$AGENT_LAUNCHER_CWD" "\${@:2}"
-fi
+app_id=--app-id=org.omarchy.agent
+[[ \$1 == --app-id=* ]] && app_id=\$1 && shift
+cmd=("\$@")
+[[ -n \${AGENT_LAUNCHER_ARGS:-} ]] && mapfile -t -O "\${#cmd[@]}" cmd <<<"\$AGENT_LAUNCHER_ARGS"
+# omarchy-agent moves launches from \$HOME to ~/Work; a resumed session must
+# start in its own project dir, so pin it on the command itself.
+[[ -n \${AGENT_LAUNCHER_CWD:-} ]] && cmd=(env -C "\$AGENT_LAUNCHER_CWD" "\${cmd[@]}")
 inline=\${AGENT_LAUNCHER_INLINE:-}
 unset AGENT_LAUNCHER_AGENT AGENT_LAUNCHER_ARGS AGENT_LAUNCHER_CWD AGENT_LAUNCHER_INLINE
-if [[ -n \$inline ]]; then
-  # Run the agent right here, in the picker's terminal.
-  [[ \$1 == --app-id=* ]] && shift
-  exec "\$@" "\${extra[@]}"
-fi
-exec omarchy-launch-tui "\$@" "\${extra[@]}"
+[[ -n \$inline ]] && exec "\${cmd[@]}"
+exec omarchy-launch-tui "\$app_id" "\${cmd[@]}"
 EOF
   chmod +x "$SHIM"/*
+}
+
+# run_agent <agent> [cwd] [resume args...]: launch through omarchy-agent.
+run_agent() {
+  local agent=$1 cwd=${2:-}
+  shift 2 || shift $#
+  ensure_shim
+  AGENT_LAUNCHER_AGENT=$agent AGENT_LAUNCHER_CWD=$cwd AGENT_LAUNCHER_ARGS=$(printf '%s\n' "$@") \
+    PATH="$SHIM:$PATH" exec omarchy-agent
 }
 
 json() { python3 -I - "$LIST" "$@"; }
@@ -103,15 +111,120 @@ helper() { python3 -I "$HELPER" "$@"; }
 
 cmd_rows() {
   ensure_list
-  helper rows
+  helper rows ${AGENT_LAUNCHER_STATE:+--state "$AGENT_LAUNCHER_STATE"}
+}
+
+PAGE=30         # conversations loaded at a time
+SEARCH_LIMIT=300 # conversations searched once you start typing
+
+# The picker's own state lives in $AGENT_LAUNCHER_STATE.nav; what the last
+# list load found (has_more, first_session) is in .rows, written by `rows`.
+# mode: "all" (apps + every agent's conversations) or an agent id (Right on its
+# app row). pending: a cursor position to apply once the next reload has loaded
+# (a number, or "sessions" for wherever the conversations start).
+save_state() {
+  printf 'limit=%s\nlastpos=%s\nsorted=%s\nmode=%s\npending=%s\nreturn_pos=%s\n' \
+    "${limit:-$PAGE}" "${lastpos:-1}" "${sorted:-0}" "${mode:-all}" "${pending:-}" "${return_pos:-1}" \
+    >"$AGENT_LAUNCHER_STATE.nav.tmp" && mv -f "$AGENT_LAUNCHER_STATE.nav.tmp" "$AGENT_LAUNCHER_STATE.nav"
+}
+
+# fzf event handler: prints the fzf action(s) to run. Kept in bash (no Python)
+# because focus fires on every cursor move.
+#   nav focus|change|load|tab|right|left|enter <row key>
+cmd_nav() {
+  local event=$1 row=${2:-} limit lastpos sorted mode pending return_pos first_session has_more
+  # shellcheck disable=SC1090
+  source "$AGENT_LAUNCHER_STATE.nav" 2>/dev/null || true
+  # shellcheck disable=SC1090
+  source "$AGENT_LAUNCHER_STATE.rows" 2>/dev/null || true
+  local pos=${FZF_POS:-1} matches=${FZF_MATCH_COUNT:-0} query=${FZF_QUERY:-}
+  local reload="reload('$SELF' rows)"
+  case "$event" in
+  focus)
+    if [[ $row == hdr\|* ]]; then
+      # The divider isn't a stop: keep going the way the cursor was moving.
+      if ((pos == 1 || (pos > ${lastpos:-0} && pos < matches))); then echo down; else echo up; fi
+    elif [[ -z $query && $has_more == 1 ]] && ((pos >= matches - 3)); then
+      # Near the end of what's loaded: fetch the next page, keeping the cursor
+      # on this row (one-off tracking, so typing never waits on a reload).
+      limit=$((${limit:-$PAGE} + PAGE))
+      echo "track-current+$reload"
+    fi
+    lastpos=$pos
+    ;;
+  change)
+    # While typing, rank by match quality (best first); with no query, back to
+    # the sectioned order. Typing also searches a bigger slice of history.
+    local actions=()
+    if [[ -n $query && ${sorted:-0} == 0 ]]; then
+      actions+=(toggle-sort) sorted=1
+    elif [[ -z $query && ${sorted:-0} == 1 ]]; then
+      actions+=(toggle-sort) sorted=0
+    fi
+    if [[ -n $query ]] && ((${limit:-$PAGE} < SEARCH_LIMIT)); then
+      limit=$SEARCH_LIMIT
+      actions+=("$reload")
+    fi
+    ((${#actions[@]})) && (IFS=+; echo "${actions[*]}")
+    ;;
+  load)
+    # Apply a cursor move queued before a reload, now that the rows exist.
+    if [[ -n ${pending:-} ]]; then
+      [[ $pending == sessions ]] && pending=${first_session:-1}
+      echo "pos($pending)"
+      pending=
+    fi
+    ;;
+  right)
+    if [[ -n $query ]]; then
+      echo forward-char
+    elif [[ ${mode:-all} == all && $row == app\|* ]]; then
+      local info agent label
+      info=$(helper session-agent "$row")
+      if [[ -n $info ]]; then
+        IFS=$'\t' read -r agent label <<<"$info"
+        mode=$agent return_pos=$pos pending=2 limit=$PAGE
+        echo "$reload+change-border-label( $label )"
+      fi
+    fi
+    ;;
+  left)
+    if [[ -n $query ]]; then
+      echo backward-char
+    elif [[ ${mode:-all} != all ]]; then
+      mode=all pending=${return_pos:-1} limit=$PAGE
+      echo "$reload+change-border-label( Agents )"
+    fi
+    ;;
+  tab)
+    if [[ ${mode:-all} != all ]]; then
+      # From one agent's view, Tab goes to everyone's recent conversations.
+      mode=all pending=sessions limit=$PAGE
+      echo "$reload+change-border-label( Agents )"
+    elif [[ -z $query ]] && ((pos < ${first_session:-1})); then
+      echo "pos(${first_session:-1})"
+    else
+      echo first
+    fi
+    ;;
+  enter)
+    case "$row" in
+    hdr\|*) ;;
+    more\|*)
+      limit=$((${limit:-$PAGE} + PAGE))
+      echo "track-current+$reload"
+      ;;
+    *) echo accept ;;
+    esac
+    ;;
+  esac
+  save_state
 }
 
 cmd_set_default() {
-  local id=${1:?}
-  id=${id#app|}
-  [[ $id == *"|"* ]] && return 0
+  [[ ${1:?} == app\|* ]] || return 0
   local agent
-  agent=$(field "$id" agent)
+  agent=$(field "${1#app|}" agent)
   if [[ -z $agent ]]; then
     echo "Only agents can be the default agent." >&2
     sleep 1
@@ -130,8 +243,7 @@ cmd_launch() {
   # Same convention as omarchy-agent: launches from $HOME start in ~/Work if it exists.
   [[ $PWD == "$HOME" && -d $HOME/Work ]] && cd "$HOME/Work"
   if [[ -n $agent ]]; then
-    ensure_shim
-    AGENT_LAUNCHER_AGENT=$agent PATH="$SHIM:$PATH" exec omarchy-agent
+    run_agent "$agent"
   elif [[ -n $command ]]; then
     [[ -n ${AGENT_LAUNCHER_INLINE:-} ]] && exec bash -lc "$command"
     exec omarchy-launch-tui --app-id=org.omarchy.agent bash -lc "$command"
@@ -145,33 +257,48 @@ cmd_pick() {
   ensure_list
   mkdir -p "$(dirname "$LOG")"
   source omarchy-restart-gum 2>/dev/null || true
-  local header=$'Enter open here · Alt-Enter new window · Tab sessions ↔ apps\nCtrl-D set default · Ctrl-R refresh usage · Ctrl-A add · Ctrl-X remove'
+  local header=$'Enter open · Alt-Enter new window · Tab recent · →/← agent\'s sessions\n^D default · ^R refresh usage · ^A add · ^X remove'
   local setting_default=false
   if [[ ${1:-} == --choose-default ]]; then
     setting_default=true
     header="No default agent yet — Enter makes it the default and launches it"
   fi
-  local apps_mode="reload('$SELF' rows)+change-prompt(  )+change-border-label( Agents )"
-  local ses_mode="reload(python3 -I '$HELPER' sessions {1})+change-prompt(󰆍  )+change-border-label( Sessions )"
+
+  # Per-picker paging state, read by `rows` and `nav`.
+  local state_dir="${XDG_RUNTIME_DIR:-/tmp}/omarchy-agent-launcher"
+  mkdir -p "$state_dir"
+  export AGENT_LAUNCHER_STATE="$state_dir/pick.$$"
+  printf 'limit=%s\n' "$PAGE" >"$AGENT_LAUNCHER_STATE.nav"
+  trap 'rm -f "$AGENT_LAUNCHER_STATE".*' EXIT
+  trap 'exit 130' HUP INT TERM
 
   local out key row
   out=$(
     cmd_rows | fzf --ansi --delimiter=$'\t' --with-nth=2.. --tabstop=2 \
-      --layout=reverse --no-multi --cycle --info=hidden --no-sort \
+      --layout=reverse --no-multi --info=hidden --no-sort \
+      --id-nth=1 \
       --prompt="  " --pointer="▶" --gutter=" " --header="$header" --header-first \
       --border=rounded --border-label=" Agents " \
       --preview="python3 -I '$HELPER' preview {1}" \
       --preview-window="right,55%,border-left,wrap" \
-      --expect=enter,alt-enter \
-      --bind "tab:transform:[[ {1} == app\|* ]] && echo \"$ses_mode\" || echo \"$apps_mode\"" \
-      --bind "ctrl-d:execute-silent('$SELF' set-default {1})+reload('$SELF' rows)" \
-      --bind "ctrl-r:execute-silent('$SELF' refresh {1})+refresh-preview+reload('$SELF' rows)" \
+      --expect=alt-enter \
+      --bind "focus:transform:'$SELF' nav focus {1}" \
+      --bind "change:transform:'$SELF' nav change {1}" \
+      --bind "tab:transform:'$SELF' nav tab {1}" \
+      --bind "right:transform:'$SELF' nav right {1}" \
+      --bind "left:transform:'$SELF' nav left {1}" \
+      --bind "load:transform:'$SELF' nav load {1}" \
+      --bind "enter:transform:'$SELF' nav enter {1}" \
+      --bind "ctrl-d:execute-silent('$SELF' set-default {1})+track-current+reload('$SELF' rows)" \
+      --bind "ctrl-r:execute-silent('$SELF' refresh {1})+refresh-preview+track-current+reload('$SELF' rows)" \
       --bind "ctrl-a:execute('$SELF' add)+reload('$SELF' rows)" \
       --bind "ctrl-x:execute-silent([[ {1} == app\|* ]] && '$SELF' rm {1})+reload('$SELF' rows)"
   ) || exit 0
+  rm -f "$AGENT_LAUNCHER_STATE".*
   key=$(sed -n 1p <<<"$out")
   row=$(sed -n 2p <<<"$out" | cut -f1)
-  [[ ($key == enter || $key == alt-enter) && -n $row ]] || exit 0
+  [[ -n $row ]] || exit 0
+  [[ $key == alt-enter ]] || key=enter
 
   case "$row" in
   add\|*)
@@ -183,6 +310,7 @@ cmd_pick() {
     $setting_default && cmd_set_default "$row"
     run_picked "$key" launch "${row#app|}"
     ;;
+  *) exec "$SELF" pick "$@" ;; # Alt-Enter on the divider: just reopen
   esac
 }
 
@@ -211,22 +339,13 @@ cmd_refresh() {
 
 cmd_resume() {
   # ses|<agent>|<session>|<cwd>
-  local agent sid cwd
+  local agent sid cwd args
   IFS='|' read -r _ agent sid cwd <<<"${1:?}"
-  local -a args
-  case "$agent" in
-  claude) args=(--resume "$sid") ;;
-  pi) args=(--session "$sid") ;;
-  omp) args=(--resume "$sid") ;;
-  hermes) args=(--resume "$sid") ;;
-  agy) args=(--conversation "$sid") ;;
-  *) echo "Can't resume $agent sessions" >&2; exit 1 ;;
-  esac
-  [[ -n $cwd && -d $cwd ]] || cwd=""
-  [[ -n $cwd ]] && cd "$cwd"
-  ensure_shim
-  AGENT_LAUNCHER_AGENT=$agent AGENT_LAUNCHER_ARGS=$(printf '%s\n' "${args[@]}") AGENT_LAUNCHER_CWD=$cwd \
-    PATH="$SHIM:$PATH" exec omarchy-agent
+  args=$(helper resume-args "$agent" "$sid") || exit 1
+  [[ -d $cwd ]] || cwd=""
+  local -a resume
+  mapfile -t resume <<<"$args"
+  run_agent "$agent" "$cwd" "${resume[@]}"
 }
 
 cmd_add() {
@@ -300,6 +419,7 @@ launch) shift; cmd_launch "$@" ;;
 add) cmd_add ;;
 rm) shift; cmd_rm "$@" ;;
 rows) cmd_rows ;;
+nav) shift; cmd_nav "$@" ;;
 resume) shift; cmd_resume "$@" ;;
 refresh) shift; cmd_refresh "$@" ;;
 set-default) shift; cmd_set_default "$@" ;;

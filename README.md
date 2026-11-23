@@ -12,14 +12,22 @@ agent and the picker's own terminal becomes that agent — no second window.
 |---|---|
 | Enter | Launch the app / resume the session in this window |
 | Alt-Enter | Launch / resume in a separate window |
-| Tab | Switch between apps and the highlighted agent's sessions |
+| Tab | Jump to recent conversations (all agents) and back to the apps |
+| → / ← | On an app: open just that agent's conversations / go back |
+| Type | Filter apps and conversations (ranked best match first) |
 | Ctrl-D | Make the highlighted agent the default |
 | Ctrl-R | Refresh the highlighted agent's usage |
 | Ctrl-A / Ctrl-X | Add / remove an app |
 | Esc | Close |
 
-The right pane shows plan usage (session/weekly limits, balance) and recent
-sessions for the highlighted app.
+The list has two sections: your **apps**, then **Recent conversations** — every
+listed agent's sessions, newest first, with timestamps (`21:40`, `Yest 14:02`,
+`Mon 09:10`, `Nov 18`). The arrow keys flow from one section into the other
+(the divider is skipped); the first 30 conversations load at once and more
+load as you scroll near the end, keeping your place. Typing searches up to 300 (while typing, ←/→ move the text cursor).
+
+The right pane shows plan usage (session/weekly limits, balance) and the
+latest sessions for the highlighted app, or a conversation's first prompts.
 
 ## How it works
 
@@ -39,6 +47,8 @@ sessions for the highlighted app.
   `~/.gemini/antigravity-cli/conversation_summaries.db`.
 - The picker opens tiled with the agent window class, so when Enter turns
   it into the agent, agent window rules and theming already apply.
+- Parsed session titles are cached in
+  `~/.cache/omarchy-agent-launcher/sessions.json` (keyed by file, mtime, size).
 - Output of separately launched (Alt-Enter) terminals goes to
   `~/.local/state/omarchy-agent-launcher/launch.log`.
 

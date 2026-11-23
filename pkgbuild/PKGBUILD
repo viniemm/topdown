@@ -1,5 +1,5 @@
 pkgname=omarchy-agent-launcher
-pkgver=0.2.0
+pkgver=0.4.1
 pkgrel=1
 pkgdesc='Floating TUI picker to launch and resume coding agents on Omarchy, with plan-usage meters'
 arch=('any')
