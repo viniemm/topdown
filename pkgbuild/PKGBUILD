@@ -1,11 +1,11 @@
 pkgname=omarchy-agent-launcher
-pkgver=0.4.1
+pkgver=0.4.3
 pkgrel=1
-pkgdesc='Floating TUI picker to launch and resume coding agents on Omarchy, with plan-usage meters'
+pkgdesc='TUI picker to launch and resume coding agents on Omarchy, with plan-usage meters'
 arch=('any')
 url='https://github.com/viniemm/omarchy-agent-launcher'
 license=('MIT')
-depends=('omarchy' 'bash' 'python' 'fzf' 'gum' 'xdg-terminal-exec' 'uwsm' 'util-linux')
+depends=('omarchy' 'bash' 'python' 'fzf' 'gum' 'xdg-terminal-exec' 'uwsm' 'util-linux' 'glib2')
 source=()
 sha256sums=()
 

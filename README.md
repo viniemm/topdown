@@ -13,18 +13,20 @@ agent and the picker's own terminal becomes that agent — no second window.
 | Enter | Launch the app / resume the session in this window |
 | Alt-Enter | Launch / resume in a separate window |
 | Tab | Jump to recent conversations (all agents) and back to the apps |
-| → / ← | On an app: open just that agent's conversations / go back |
+| → / ← | On an app: open just that agent's conversations / go back (← also clears a search there) |
 | Type | Filter apps and conversations (ranked best match first) |
 | Ctrl-D | Make the highlighted agent the default |
 | Ctrl-R | Refresh the highlighted agent's usage |
-| Ctrl-A / Ctrl-X | Add / remove an app |
+| Ctrl-A | Add an app |
+| Ctrl-X / Del | Delete the highlighted conversation, or remove the app from the list (asks first; Del only when the search is empty; a conversation that's open can't be deleted) |
 | Esc | Close |
 
 The list has two sections: your **apps**, then **Recent conversations** — every
 listed agent's sessions, newest first, with timestamps (`21:40`, `Yest 14:02`,
 `Mon 09:10`, `Nov 18`). The arrow keys flow from one section into the other
 (the divider is skipped); the first 30 conversations load at once and more
-load as you scroll near the end, keeping your place. Typing searches up to 300 (while typing, ←/→ move the text cursor).
+load as you scroll near the end, keeping your place. Typing searches up to 300
+(while typing in the main list, ←/→ move the text cursor).
 
 The right pane shows plan usage (session/weekly limits, balance) and the
 latest sessions for the highlighted app, or a conversation's first prompts.
@@ -36,17 +38,19 @@ latest sessions for the highlighted app, or a conversation's first prompts.
   `~/Work` convention) and
   `org.omarchy.agent` window class. A small PATH shim
   (`~/.local/share/omarchy-agent-launcher/shim`) makes `omarchy-agent` run the
-  picked agent instead of the default, and appends resume flags; the shim is
-  removed from PATH before the agent's terminal starts.
+  picked agent instead of the default, and appends extra and resume flags; the
+  shim is removed from PATH before the agent's terminal starts.
 - **Usage** is read (never written) from the records the bar's agents plugin
   watches: `~/.local/state/omarchy/agents/usage/<id>.json`, produced by
   `omarchy-agent-usage-update`.
-- **Sessions** are read-only from each agent's store:
+- **Sessions** are read from each agent's store:
   Claude `~/.claude/projects`, Pi `~/.pi/agent/sessions`, omp
   `~/.omp/agent/sessions`, Hermes `~/.hermes/state.db`, Antigravity
-  `~/.gemini/antigravity-cli/conversation_summaries.db`.
-- The picker opens tiled with the agent window class, so when Enter turns
-  it into the agent, agent window rules and theming already apply.
+  `~/.gemini/antigravity-cli/conversation_summaries.db`. Only deleting writes:
+  file sessions are moved to the Trash (`gio trash`, restorable), Hermes uses
+  `hermes sessions delete`, and Antigravity, which has no delete command, is left alone.
+- The picker's window has the agent window class (`org.omarchy.agent`), so
+  when Enter turns it into the agent, agent window rules already apply.
 - Parsed session titles are cached in
   `~/.cache/omarchy-agent-launcher/sessions.json` (keyed by file, mtime, size).
 - Output of separately launched (Alt-Enter) terminals goes to
@@ -61,6 +65,16 @@ latest sessions for the highlighted app, or a conversation's first prompts.
 | `pkgbuild/` | Arch package: `PKGBUILD`, `.desktop` launcher entry, icon |
 | `bin/install` | Builds and installs the package (`makepkg -fsi`) |
 | `~/.config/omarchy/agent-launcher.json` | Your app list (created on first run) |
+
+Each app is either an agent Omarchy knows (`"agent"`) or any terminal command
+(`"command"`). An agent app can add `"args"` to every launch and resume, as a
+list or one shell-quoted string:
+
+    {"id": "hermes", "label": "Hermes", "agent": "hermes", "args": ["--tui"]}
+
+Hermes gets `--tui` (its modern TUI) when it has no `"args"` of its own;
+Omarchy's `omarchy-agent` would start the classic REPL. Set `"args": []` to
+keep the REPL.
 
 Installed, the package puts the command in `/usr/bin`, the helper in
 `/usr/lib/omarchy-agent-launcher/`, and an **Agent Launcher** entry in the app

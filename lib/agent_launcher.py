@@ -15,7 +15,10 @@ import datetime as dt
 import glob
 import json
 import os
+import shlex
+import shutil
 import sqlite3
+import subprocess
 import sys
 
 HOME = os.path.expanduser("~")
@@ -29,6 +32,10 @@ PAGE = 30
 
 # Usage record ids that differ from the Omarchy agent id; others use the agent id.
 USAGE_IDS = {"cursor-agent": "cursor", "mcode": "minimax", "dsh": "deepseek", "ori": "openrouter"}
+# Arguments added to an agent's usual command on every launch and resume, unless
+# its app entry sets "args". Omarchy starts Hermes in its classic REPL; --tui
+# is Hermes' modern TUI.
+DEFAULT_ARGS = {"hermes": ["--tui"]}
 
 R, B, D = "\033[0m", "\033[1m", "\033[2m"
 GREEN, YELLOW, RED, CYAN, MAG = "\033[32m", "\033[33m", "\033[31m", "\033[36m", "\033[35m"
@@ -350,19 +357,36 @@ def agy_sessions(limit, sid=None):
     return out
 
 
+def claude_live(sid):
+    """Claude Code records each running session in ~/.claude/sessions/<pid>.json."""
+    for path in glob.glob(os.path.join(HOME, ".claude/sessions/*.json")):
+        try:
+            with open(path) as f:
+                rec = json.load(f)
+            if rec.get("sessionId") == sid:
+                os.kill(int(rec["pid"]), 0)  # raises if that process is gone
+                return True
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue
+    return False
+
+
 # Everything agent-specific about sessions: where they live and how to resume one.
 #   files: glob under $HOME, parsed with `parse`; the session id is the file stem
 #          ("stem") or its full path ("path")
 #   query: a function(limit, sid=None) returning session dicts
 #   resume: arguments appended to the agent's usual command ({id} = session id)
+#   delete: for query stores, the agent's own delete command (file sessions go to the Trash)
+#   live:   function(sid) -> True while the agent has that session open
 SOURCES = {
     "claude": {"files": ".claude/projects/*/*.jsonl", "parse": parse_claude, "id": "stem",
-               "resume": ["--resume", "{id}"]},
+               "resume": ["--resume", "{id}"], "live": claude_live},
     "pi": {"files": ".pi/agent/sessions/*/*.jsonl", "parse": parse_pi, "id": "path",
            "resume": ["--session", "{id}"]},
     "omp": {"files": ".omp/agent/sessions/*/*.jsonl", "parse": parse_pi, "id": "path",
             "resume": ["--resume", "{id}"]},
-    "hermes": {"query": hermes_sessions, "resume": ["--resume", "{id}"]},
+    "hermes": {"query": hermes_sessions, "resume": ["--resume", "{id}"],
+               "delete": ["hermes", "sessions", "delete", "--yes", "{id}"]},
     "agy": {"query": agy_sessions, "resume": ["--conversation", "{id}"]},
 }
 
@@ -444,12 +468,16 @@ def session_by_id(agent, sid):
         return None
     if "query" in src:
         return next(iter(src["query"](1, sid)), None)
-    if src["id"] == "path":
-        path = sid
-    else:
-        pattern = os.path.join(HOME, os.path.dirname(src["files"]), glob.escape(sid) + ".jsonl")
-        path = next(iter(glob.glob(pattern)), None)
+    path = session_file(agent, sid)
     return file_session(agent, path, Cache()) if path else None
+
+
+def session_file(agent, sid):
+    src = SOURCES[agent]
+    if src["id"] == "path":
+        return sid if os.path.isfile(sid) else None
+    pattern = os.path.join(HOME, os.path.dirname(src["files"]), glob.escape(sid) + ".jsonl")
+    return next(iter(glob.glob(pattern)), None)
 
 
 # ---------- rows ----------
@@ -586,18 +614,82 @@ def cmd_session_agent(key):
         print(f"{a['agent']}\t{a['label']}")
 
 
+def agent_args(agent, entry=None):
+    """The app's own "args" (a list, or one shell-quoted string), else DEFAULT_ARGS."""
+    if entry is None:  # resuming: the first app that runs this agent
+        entry = next((a for a in load_apps() if a.get("agent") == agent), {})
+    args = entry.get("args", DEFAULT_ARGS.get(agent, []))
+    return shlex.split(args) if isinstance(args, str) else [str(a) for a in args]
+
+
+def cmd_launch_args(key):
+    """One argument per line: what to append to an app's (or a bare agent's) command."""
+    a = app_from_key(key)
+    print("\n".join(agent_args(a.get("agent", ""), a) if a else agent_args(key)))
+
+
 def cmd_resume_args(agent, sid):
     """One argument per line: what to append to the agent's command to resume `sid`."""
     src = SOURCES.get(agent)
     if not src:
         sys.exit(f"Can't resume {agent} sessions")
-    print("\n".join(arg.replace("{id}", sid) for arg in src["resume"]))
+    print("\n".join(agent_args(agent) + [arg.replace("{id}", sid) for arg in src["resume"]]))
+
+
+def user_bin(name):
+    """Like omarchy-agent: a user install in ~/.local/bin wins over PATH."""
+    local = os.path.join(HOME, ".local/bin", name)
+    return local if os.access(local, os.X_OK) else shutil.which(name) or name
+
+
+def deletable(agent):
+    src = SOURCES.get(agent) or {}
+    return "files" in src or "delete" in src
+
+
+def cmd_delete_prompt(key):
+    """The question Ctrl-X/Del asks; exits non-zero (with the reason) if it can't go ahead."""
+    if not key.startswith("ses|"):
+        a = app_from_key(key)
+        print(f"Remove {a['label'] if a else key} from the list? (it stays installed)")
+        return
+    agent, sid = key.split("|")[1:3]
+    if not deletable(agent):
+        sys.exit(f"{agent_label(agent)} has no delete command, so its conversations can't be deleted here.")
+    s = session_by_id(agent, sid)
+    if not s:
+        sys.exit("That conversation is already gone.")
+    what = f"{agent_label(agent)} — {oneline(s['title'], 60)}"
+    live = SOURCES[agent].get("live")
+    if live and live(sid):
+        sys.exit(f"\"{what}\" is open right now. Close it first: a running agent writes it straight back.")
+    question = f"Delete \"{what}\"?"
+    if dt.datetime.now().timestamp() - s["when"] < 120:
+        question += f"\nIt changed {ago(s['when'])}. If it's still open somewhere, the agent will write it back."
+    print(question)
+
+
+def cmd_delete(agent, sid):
+    """Delete a conversation: file sessions go to the Trash, others use the agent's own command."""
+    src = SOURCES.get(agent) or {}
+    if not deletable(agent):
+        sys.exit(f"{agent_label(agent)} has no delete command, so its conversations can't be deleted here.")
+    if "files" in src:
+        path = session_file(agent, sid)
+        if not path:
+            sys.exit("That conversation is already gone.")
+        side = path[:-len(".jsonl")]  # Claude keeps subagent transcripts in a sibling folder
+        subprocess.run(["gio", "trash", path] + ([side] if os.path.isdir(side) else []), check=True)
+    else:
+        cmd = [arg.replace("{id}", sid) for arg in src["delete"]]
+        subprocess.run([user_bin(cmd[0])] + cmd[1:], check=True, stdout=subprocess.DEVNULL)
 
 
 def main():
     cmd, *args = sys.argv[1:] or ["rows"]
     {"rows": cmd_rows, "preview": cmd_preview, "title": cmd_title, "usage-id": cmd_usage_id,
-     "session-agent": cmd_session_agent, "resume-args": cmd_resume_args}[cmd](*args)
+     "session-agent": cmd_session_agent, "resume-args": cmd_resume_args, "launch-args": cmd_launch_args,
+     "delete-prompt": cmd_delete_prompt, "delete": cmd_delete}[cmd](*args)
 
 
 if __name__ == "__main__":

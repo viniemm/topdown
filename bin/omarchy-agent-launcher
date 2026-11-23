@@ -7,12 +7,13 @@
 #   omarchy-agent-launcher launch <id>   Launch one app from the list
 #   omarchy-agent-launcher add           Add an app interactively
 #   omarchy-agent-launcher rm <id>       Remove an app
+#   omarchy-agent-launcher delete <key>  Delete a row (asks first): a conversation, or an app from the list
 #   omarchy-agent-launcher resume <key>  Resume a session row (ses|agent|id|cwd) in its project directory
 #
 # Picker keys: Enter launch/resume in this window · Alt-Enter in a new window
 #              Tab apps ↔ recent conversations · → an agent's conversations · ← back
 #              Ctrl-D set default agent
-#              Ctrl-R refresh usage · Ctrl-A add · Ctrl-X remove · Esc close
+#              Ctrl-R refresh usage · Ctrl-A add · Ctrl-X/Del delete (asks first) · Esc close
 #
 # The right pane reads the usage records the bar's agents plugin watches
 # (~/.local/state/omarchy/agents/usage/) and each agent's own session store.
@@ -189,11 +190,12 @@ cmd_nav() {
     fi
     ;;
   left)
-    if [[ -n $query ]]; then
-      echo backward-char
-    elif [[ ${mode:-all} != all ]]; then
+    if [[ ${mode:-all} != all ]]; then
+      # Back out of an agent's view, search and all (Ctrl-B still moves the text cursor).
       mode=all pending=${return_pos:-1} limit=$PAGE
-      echo "$reload+change-border-label( Agents )"
+      echo "${query:+change-query()+}$reload+change-border-label( Agents )"
+    elif [[ -n $query ]]; then
+      echo backward-char
     fi
     ;;
   tab)
@@ -205,6 +207,15 @@ cmd_nav() {
       echo "pos(${first_session:-1})"
     else
       echo first
+    fi
+    ;;
+  delete | del)
+    # Ctrl-X, or Del with an empty search box (otherwise Del edits the query).
+    if [[ $event == del && -n $query ]]; then
+      echo delete-char
+    elif [[ $row == app\|* || $row == ses\|* ]]; then
+      pending=$pos
+      echo "execute('$SELF' delete {1})+$reload"
     fi
     ;;
   enter)
@@ -243,7 +254,9 @@ cmd_launch() {
   # Same convention as omarchy-agent: launches from $HOME start in ~/Work if it exists.
   [[ $PWD == "$HOME" && -d $HOME/Work ]] && cd "$HOME/Work"
   if [[ -n $agent ]]; then
-    run_agent "$agent"
+    local -a args
+    mapfile -t args < <(helper launch-args "$id")
+    run_agent "$agent" "" "${args[@]}"
   elif [[ -n $command ]]; then
     [[ -n ${AGENT_LAUNCHER_INLINE:-} ]] && exec bash -lc "$command"
     exec omarchy-launch-tui --app-id=org.omarchy.agent bash -lc "$command"
@@ -257,7 +270,7 @@ cmd_pick() {
   ensure_list
   mkdir -p "$(dirname "$LOG")"
   source omarchy-restart-gum 2>/dev/null || true
-  local header=$'Enter open · Alt-Enter new window · Tab recent · →/← agent\'s sessions\n^D default · ^R refresh usage · ^A add · ^X remove'
+  local header=$'Enter open · Alt-Enter new window · Tab recent · →/← agent\'s sessions\n^D default · ^R refresh usage · ^A add · ^X/Del delete'
   local setting_default=false
   if [[ ${1:-} == --choose-default ]]; then
     setting_default=true
@@ -292,7 +305,8 @@ cmd_pick() {
       --bind "ctrl-d:execute-silent('$SELF' set-default {1})+track-current+reload('$SELF' rows)" \
       --bind "ctrl-r:execute-silent('$SELF' refresh {1})+refresh-preview+track-current+reload('$SELF' rows)" \
       --bind "ctrl-a:execute('$SELF' add)+reload('$SELF' rows)" \
-      --bind "ctrl-x:execute-silent([[ {1} == app\|* ]] && '$SELF' rm {1})+reload('$SELF' rows)"
+      --bind "ctrl-x:transform:'$SELF' nav delete {1}" \
+      --bind "del:transform:'$SELF' nav del {1}"
   ) || exit 0
   rm -f "$AGENT_LAUNCHER_STATE".*
   key=$(sed -n 1p <<<"$out")
@@ -399,16 +413,37 @@ json.dump(apps, open(path, "w"), indent=2)
 EOF
 }
 
+cmd_delete() {
+  local key=${1:?} question agent sid
+  printf '\033[H\033[2J' # fzf hands over the normal screen; start from a clean one
+  # The helper says why when it can't go ahead (e.g. the conversation is open).
+  if ! question=$(helper delete-prompt "$key"); then
+    read -rsn1 -p "Press any key to go back"
+    return 0
+  fi
+  gum confirm "$question" || return 0
+  case $key in
+  app\|*) cmd_rm "$key" ;;
+  ses\|*)
+    IFS='|' read -r _ agent sid _ <<<"$key"
+    helper delete "$agent" "$sid" || read -rsn1 -p "Press any key to go back"
+    ;;
+  esac
+  return 0
+}
+
 cmd_open() {
-  # A tiled window with the agent class: Enter turns this very window into the agent.
+  # A window with the agent class: Enter turns this very window into the agent.
   exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.omarchy.agent --title=Agents -e "$SELF" pick "$@"
 }
 
 cmd_default() {
-  if [[ -n $(omarchy-default-agent) ]]; then
-    exec omarchy-agent
-  fi
-  cmd_open --choose-default
+  local agent
+  agent=$(omarchy-default-agent)
+  [[ -n $agent ]] || cmd_open --choose-default
+  local -a args
+  mapfile -t args < <(helper launch-args "$agent")
+  run_agent "$agent" "" "${args[@]}"
 }
 
 case "${1:-}" in
@@ -418,6 +453,7 @@ pick) shift; cmd_pick "$@" ;;
 launch) shift; cmd_launch "$@" ;;
 add) cmd_add ;;
 rm) shift; cmd_rm "$@" ;;
+delete) shift; cmd_delete "$@" ;;
 rows) cmd_rows ;;
 nav) shift; cmd_nav "$@" ;;
 resume) shift; cmd_resume "$@" ;;
