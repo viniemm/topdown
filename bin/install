@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the package from this checkout and install it, so the app lands in the
-# launcher (Super+Space) and omarchy-agent-launcher is on PATH.
+# launcher (Super+Space) and topdown is on PATH.
 set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT/pkgbuild"

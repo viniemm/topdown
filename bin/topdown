@@ -1,0 +1,23 @@
+#!/bin/bash
+# topdown launcher. The UI decides what to run and hands it back through a file
+# (cwd, environment, argv); this script then execs it, so the terminal becomes
+# the agent and no runtime is left running behind it.
+set -euo pipefail
+self=$(readlink -f "$0")
+dir=$(dirname "$self")
+if [[ -x $dir/../lib/topdown/topdown ]]; then
+  ui=("$dir/../lib/topdown/topdown")            # installed: /usr/lib/topdown/topdown
+elif [[ -f $dir/../src/main.ts ]]; then
+  ui=(bun "$dir/../src/main.ts")                # from a checkout
+else
+  echo "topdown: can't find the UI next to $self" >&2
+  exit 1
+fi
+handoff=$(mktemp -u "${XDG_RUNTIME_DIR:-/tmp}/topdown-exec.XXXXXX")
+trap 'rm -f "$handoff"' EXIT
+TOPDOWN_SELF=$self TOPDOWN_EXEC_FILE=$handoff "${ui[@]}" "$@"
+[[ -s $handoff ]] || exit 0
+mapfile -d '' -t spec <"$handoff"
+rm -f "$handoff"
+trap - EXIT
+exec env "${spec[@]}"

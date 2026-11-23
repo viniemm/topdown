@@ -1,85 +1,109 @@
-// topdown spike: prove pi-tui's HubFrame renders, takes keys, and compiles.
-import { ProcessTerminal, TUI, type Component } from "@oh-my-pi/pi-tui";
-import { HubFrame, type SidebarEntry } from "@oh-my-pi/pi-tui/overlays/hub-frame";
-import { matchesKey } from "@oh-my-pi/pi-tui/keys";
-import { initThemeSync, theme } from "@oh-my-pi/pi-tui/theme/theme";
-import { truncateToWidth, visibleWidth } from "@oh-my-pi/pi-tui/utils";
+// topdown: one TUI to launch, resume and manage coding agents.
+//
+//   topdown [pick]            the hub in this terminal
+//   topdown open              the hub in a new terminal window (Super+Shift+A)
+//   topdown default           launch the default agent; none yet -> the hub chooses (Super+A)
+//   topdown launch <app-id>   launch one app from the list
+//   topdown resume <agent> <session-id>
+//   topdown list [agent…]     recent conversations, tab-separated (for scripts)
+import { ProcessTerminal, TUI } from "@oh-my-pi/pi-tui";
+import { initThemeSync } from "@oh-my-pi/pi-tui/theme/theme";
+import { agent as findAgent } from "./agents";
+import { getSession, recent } from "./core/catalog";
+import { getDefault, loadApps } from "./core/config";
+import { appSpec, defaultSpec, execHere, execWindow, resumeSpec, type Where } from "./core/launch";
+import type { ExecSpec } from "./core/types";
+import { oneline, stamp } from "./core/util";
+import { focusWindow } from "./integrations/hyprland";
+import { isOmarchy, WINDOW_CLASS } from "./integrations/omarchy";
+import { Hub, type HubResult } from "./ui/hub";
 
-type Kind = "agent" | "recent" | "separator";
+/** How to run topdown itself: the wrapper sets TOPDOWN_SELF; otherwise this runtime + script. */
+function selfArgv(): string[] {
+	if (process.env.TOPDOWN_SELF) return [process.env.TOPDOWN_SELF];
+	return Bun.main.endsWith(".ts") ? [process.execPath, Bun.main] : [process.execPath];
+}
 
-class SpikeHub implements Component {
-	#tui: TUI;
-	#done: () => void;
-	#entries: SidebarEntry<Kind>[] = [
-		{ id: "recent", kind: "recent", label: "Recent", annotation: "12" },
-		{ id: "sep", kind: "separator", label: "" },
-		{ id: "claude", kind: "agent", label: "claude", annotation: "8" },
-		{ id: "hermes", kind: "agent", label: "hermes", annotation: "3" },
-		{ id: "pi", kind: "agent", label: "pi", annotation: "1" },
-	];
-	#active = "recent";
-	#focus: "scope" | "body" = "body";
-	#cursor = 0;
-	#rows = [
-		["● 21:40", "claude", "topdown", "Omarchy agent launcher"],
-		["  Yest 14:02", "hermes", "Work", "Lightest Linux distro for agent VM"],
-		["  Mon 09:10", "pi", "xfin", "Refactor auth module"],
-	];
-	#frame = new HubFrame(
-		"topdown",
-		{ min: 16, max: 24 },
-		(width, rows) =>
-			this.#frame.renderSidebar(
-				this.#entries,
-				width,
-				rows,
-				{ id: this.#active, focused: this.#focus === "scope", follow: true, clamp: false },
-				entry => ({ icon: entry.kind === "agent" ? theme.fg("accent", "◆") : "◇", annotation: theme.fg("dim", entry.annotation ?? "") }),
-			),
-		(width, height) => {
-			const out = [theme.bold(" Recent conversations"), theme.fg("dim", " > ")];
-			this.#rows.forEach((r, i) => {
-				const line = ` ${theme.fg("dim", r[0].padEnd(12))} ${theme.fg("accent", r[1].padEnd(8))} ${theme.fg("muted", r[2].padEnd(10))} ${r[3]}`;
-				const sel = i === this.#cursor && this.#focus === "body";
-				out.push(sel ? theme.bg("selectedBg", truncateToWidth(line, width) + " ".repeat(Math.max(0, width - visibleWidth(line)))) : truncateToWidth(line, width));
-			});
-			const rows = height ?? 10;
-			while (out.length < rows - 1) out.push("");
-			out.push(theme.fg("dim", ` ${this.#rows[this.#cursor]?.[3]} · Enter resumes · Alt-Enter new window`));
-			return out.slice(0, rows);
-		},
-	);
-
-	constructor(tui: TUI, done: () => void) {
-		this.#tui = tui;
-		this.#done = done;
+async function run(spec: ExecSpec, where: Where, title: string): Promise<never> {
+	if (where === "window") {
+		execWindow(spec);
+		process.exit(0);
 	}
+	return execHere(spec, title);
+}
 
-	handleInput(data: string): void {
-		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) return this.#done();
-		if (matchesKey(data, "tab")) this.#focus = this.#focus === "body" ? "scope" : "body";
-		if (matchesKey(data, "down")) this.#cursor = Math.min(this.#rows.length - 1, this.#cursor + 1);
-		if (matchesKey(data, "up")) this.#cursor = Math.max(0, this.#cursor - 1);
-		this.#frame.invalidate();
-		this.#tui.requestRender();
-	}
-
-	invalidate(): void {
-		this.#frame.invalidate();
-	}
-
-	render(width: number): readonly string[] {
-		const rows = Math.max(16, this.#tui.terminal?.rows || process.stdout.rows || 40);
-		return this.#frame.render(width, rows, this.#entries, "⏎ resume · Tab panes · ↑/↓ move · type to search · esc close");
+async function pick(chooseDefault: boolean): Promise<never> {
+	initThemeSync();
+	const tui = new TUI(new ProcessTerminal());
+	const result = await new Promise<HubResult>(resolve => {
+		const hub = new Hub(tui, resolve, { chooseDefault });
+		tui.addChild(hub);
+		tui.setFocus(hub);
+		tui.start();
+	});
+	tui.stop();
+	switch (result.action) {
+		case "quit":
+			process.exit(0);
+		case "focus":
+			focusWindow(result.address);
+			process.exit(0);
+		case "launch":
+			return run(appSpec(result.app, result.where, result.extra), result.where, result.app.label);
+		case "resume":
+			return run(resumeSpec(result.s, result.where, result.extra), result.where, `${result.s.agent} — ${oneline(result.s.title, 60)}`);
 	}
 }
 
-initThemeSync();
-const tui = new TUI(new ProcessTerminal());
-const hub = new SpikeHub(tui, () => {
-	tui.stop();
+function openWindow(args: string[]): never {
+	const argv = ["xdg-terminal-exec", `--app-id=${WINDOW_CLASS}`, "--title=topdown", "-e", ...selfArgv(), "pick", ...args];
+	const full = Bun.which("uwsm-app") ? ["uwsm-app", "--", ...argv] : argv;
+	Bun.spawnSync(["setsid", "-f", ...full], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
 	process.exit(0);
+}
+
+async function main(): Promise<void> {
+	const [cmd = "pick", ...args] = process.argv.slice(2);
+	switch (cmd) {
+		case "pick":
+			return pick(args.includes("--choose-default"));
+		case "open":
+			return openWindow(args);
+		case "default": {
+			const id = getDefault();
+			if (!id) return openWindow(["--choose-default"]);
+			execWindow(defaultSpec(id, "window"));
+			process.exit(0);
+		}
+		case "launch": {
+			const app = loadApps().find(a => a.id === args[0]);
+			if (!app) throw new Error(`No app named '${args[0] ?? ""}'`);
+			const where: Where = process.env.TOPDOWN_WINDOW ? "window" : "here";
+			return run(appSpec(app, where), where, app.label);
+		}
+		case "resume": {
+			const s = args[0] && args[1] ? getSession(args[0], args[1]) : undefined;
+			if (!s) throw new Error("usage: topdown resume <agent> <session-id> (session not found)");
+			return run(resumeSpec(s, "here"), "here", s.title);
+		}
+		case "list": {
+			const agents = args.length ? args : [...new Set(loadApps().map(a => a.agent).filter((a): a is string => !!findAgent(a)?.sessions))];
+			for (const s of recent(agents, 50).sessions) console.log([stamp(s.when), s.agent, s.id, s.cwd, s.title].join("\t"));
+			return;
+		}
+		case "-h":
+		case "--help":
+		case "help":
+			console.log(
+				"topdown [pick|open|default|launch <app>|resume <agent> <id>|list [agent…]]" + (isOmarchy() ? "  (Omarchy integration on)" : ""),
+			);
+			return;
+		default:
+			throw new Error(`unknown command: ${cmd}`);
+	}
+}
+
+main().catch(e => {
+	console.error(`topdown: ${e instanceof Error ? e.message : e}`);
+	process.exit(1);
 });
-tui.addChild(hub);
-tui.setFocus(hub);
-tui.start();

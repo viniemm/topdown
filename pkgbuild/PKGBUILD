@@ -1,20 +1,41 @@
-pkgname=omarchy-agent-launcher
-pkgver=0.4.4
+pkgname=topdown
+pkgver=0.5.0
 pkgrel=1
-pkgdesc='TUI picker to launch and resume coding agents on Omarchy, with plan-usage meters'
-arch=('any')
-url='https://github.com/viniemm/omarchy-agent-launcher'
+pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
+arch=('x86_64')
+url='https://github.com/viniemm/topdown'
 license=('MIT')
-depends=('omarchy' 'bash' 'python' 'fzf' 'gum' 'xdg-terminal-exec' 'uwsm' 'util-linux' 'glib2')
+depends=('bash' 'util-linux')
+optdepends=('omarchy: launch through omarchy-agent, plan-usage meters'
+            'hyprland: switch to an already-open conversation'
+            'xdg-terminal-exec: open agents in a new terminal window'
+            'glib2: trash files that live on another filesystem')
+makedepends=('bun')
+provides=('omarchy-agent-launcher')
+conflicts=('omarchy-agent-launcher')
+replaces=('omarchy-agent-launcher')
+options=('!strip' '!debug')   # a bun --compile binary carries its payload; stripping breaks it
 source=()
 sha256sums=()
 
+build() {
+  cd "$startdir/.."
+  bun install --frozen-lockfile
+  bun build --compile --minify src/main.ts --outfile "$srcdir/topdown"
+}
+
 package() {
   cd "$startdir/.."
-  install -Dm755 bin/omarchy-agent-launcher "$pkgdir/usr/bin/omarchy-agent-launcher"
-  install -Dm644 lib/agent_launcher.py "$pkgdir/usr/lib/omarchy-agent-launcher/agent_launcher.py"
-  install -Dm644 "$startdir/omarchy-agent-launcher.desktop" "$pkgdir/usr/share/applications/omarchy-agent-launcher.desktop"
-  install -Dm644 "$startdir/omarchy-agent-launcher.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/omarchy-agent-launcher.svg"
+  # The UI binary and omp's native addon, which it loads from beside itself.
+  install -Dm755 "$srcdir/topdown" "$pkgdir/usr/lib/topdown/topdown"
+  install -Dm644 node_modules/@oh-my-pi/pi-natives-linux-x64/pi_natives.linux-x64-modern.node \
+    node_modules/@oh-my-pi/pi-natives-linux-x64/pi_natives.linux-x64-baseline.node -t "$pkgdir/usr/lib/topdown/"
+  install -Dm755 bin/topdown "$pkgdir/usr/bin/topdown"
+  ln -s topdown "$pkgdir/usr/bin/omarchy-agent-launcher"   # old keybindings keep working
+  install -Dm644 "$startdir/topdown.desktop" "$pkgdir/usr/share/applications/topdown.desktop"
+  install -Dm644 "$startdir/topdown.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/topdown.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 node_modules/@oh-my-pi/pi-natives-linux-x64/THIRD-PARTY-NOTICES.txt \
+    "$pkgdir/usr/share/licenses/$pkgname/pi-natives-THIRD-PARTY-NOTICES.txt"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

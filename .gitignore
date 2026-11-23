@@ -5,3 +5,4 @@ pkgbuild/src/
 pkgbuild/*.pkg.tar.*
 node_modules/
 dist/
+test/.home-*/
