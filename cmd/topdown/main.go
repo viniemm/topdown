@@ -28,6 +28,9 @@ import (
 	"github.com/viniemm/topdown/internal/util"
 )
 
+// version is set at build time: -ldflags "-X main.version=…".
+var version = "dev"
+
 const usage = "topdown [pick|open|default|launch <app>|resume <agent> <id>|list [agent…]]"
 
 func main() {
@@ -85,6 +88,9 @@ func run(args []string) error {
 			fmt.Println(strings.Join([]string{util.Stamp(s.When), s.Agent, s.ID, s.Cwd, s.Title}, "\t"))
 		}
 		return nil
+	case "-v", "--version", "version":
+		fmt.Println("topdown", version)
+		return nil
 	case "-h", "--help", "help":
 		if omarchy.Present() {
 			fmt.Println(usage + "  (Omarchy integration on)")
@@ -107,7 +113,7 @@ func contains(list []string, s string) bool {
 
 func pick(chooseDefault bool) error {
 	theme.Init(theme.Detect())
-	hub := ui.New(ui.Options{ChooseDefault: chooseDefault})
+	hub := ui.New(ui.Options{ChooseDefault: chooseDefault, Version: version})
 	if _, err := tea.NewProgram(hub).Run(); err != nil {
 		return err
 	}

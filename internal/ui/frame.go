@@ -87,19 +87,51 @@ func (f *frame) sidebar(entries []entry, w, rows int, active string, focused boo
 	return out
 }
 
+// gradBorder draws a plain border string fading from the accent into the
+// border colour (mirrored with reverse), or flat without true colour.
+func gradBorder(s string, reverse bool) string {
+	if !theme.Rich() {
+		return border(s)
+	}
+	runes := []rune(s)
+	var b strings.Builder
+	from, to := theme.RoleColor(theme.Accent), theme.RoleColor(theme.Border)
+	for i, r := range runes {
+		t := float64(i) / float64(max(1, len(runes)-1))
+		if reverse {
+			t = 1 - t
+		}
+		b.WriteString(theme.FgRGB(theme.Mix(from, to, min(1, t*2.2)), string(r)))
+	}
+	return b.String()
+}
+
 // render is the whole screen: height lines of exactly totalWidth columns.
+// header, when given, is a band across the top (the logo) above the split.
 func (f *frame) render(totalWidth, height int, entries []entry, sidebarFn func(w, rows int) []string,
-	bodyFn func(w, rows int) []string, footer string) string {
+	bodyFn func(w, rows int) []string, footer string, header func(w int) []string) string {
 	W := max(40, totalWidth)
-	rows := max(3, height-4)
+	var head []string
+	if header != nil {
+		head = header(W - 4)
+	}
+	rows := max(3, height-4-len(head)-min(1, len(head)))
 	sw := min(f.sidebarWidth(entries), max(10, (W-7)/3))
 	bw := W - sw - 7
 	left := sidebarFn(sw, rows)
 	body := bodyFn(bw, rows)
 
-	name := " " + f.title + " "
 	var b strings.Builder
-	b.WriteString(border("╭─" + truncate(name, sw) + strings.Repeat("─", max(0, sw+1-width(name))) + "┬" + strings.Repeat("─", bw+2) + "╮"))
+	if len(head) > 0 {
+		b.WriteString(gradBorder("╭"+strings.Repeat("─", W-2)+"╮", false))
+		for _, l := range head {
+			b.WriteString("\n" + border("│") + " " + fit(l, W-4) + " " + border("│"))
+		}
+		b.WriteString("\n" + border("├"+strings.Repeat("─", sw+2)+"┬"+strings.Repeat("─", bw+2)+"┤"))
+	} else {
+		name := " " + f.title + " "
+		b.WriteString(gradBorder("╭─"+name+strings.Repeat("─", max(0, sw+1-width(name)))+"┬"+strings.Repeat("─", bw+2)+"╮", false))
+	}
 	at := func(lines []string, i int) string {
 		if i < len(lines) {
 			return lines[i]
@@ -111,6 +143,6 @@ func (f *frame) render(totalWidth, height int, entries []entry, sidebarFn func(w
 	}
 	b.WriteString("\n" + border("├"+strings.Repeat("─", sw+2)+"┴"+strings.Repeat("─", bw+2)+"┤"))
 	b.WriteString("\n" + border("│") + " " + fit(footer, W-4) + " " + border("│"))
-	b.WriteString("\n" + border("╰"+strings.Repeat("─", W-2)+"╯"))
+	b.WriteString("\n" + gradBorder("╰"+strings.Repeat("─", W-2)+"╯", true))
 	return b.String()
 }

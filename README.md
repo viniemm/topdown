@@ -8,7 +8,12 @@ and Lip Gloss. The look comes from studying omp's model picker
 sidebar of scopes, a searchable list, a detail panel and a key bar.
 
 ```
-╭─ topdown ────────┬──────────────────────────────────────────────────────────╮
+╭─────────────────────────────────────────────────────────────────────────────╮
+│ ▀▀▀▀▀▀▀▀▀    █               █                            6 apps · ● 1 open │
+│ ▀███████▀   ▀█▀ ▄▀▀▄ █▀▀▄ ▄▀▀█ ▄▀▀▄ █ █ █ █▀▀▄                 default claude │
+│  ▀█████▀     █▄ ▀▄▄▀ █▄▄▀ ▀▄▄█ ▀▄▄▀ ▀▄▀▄▀ █  █                                │
+│    ▀█▀               █      v0.8.0                   agents, from the top down │
+├──────────────────┬──────────────────────────────────────────────────────────┤
 │   ▦ Apps       6 │  Recent conversations                                    │
 │   ◷ Recent       │  ›                                                       │
 │ ──────────────── │  ● 17:32      claude  topdown      Port the launcher     │
@@ -100,6 +105,16 @@ it), each project a stable colour, timestamps fading with age, usage meters
 green → yellow → red. Override any of it in `~/.config/topdown/theme.json`:
 roles (`accent`, `border`, `dim`, `muted`, `success`, `warning`, `error`,
 `selected`) and `{"agents": {"claude": "#d97757"}}`.
+
+## Motion
+
+The logo sweeps in when the hub opens and a shimmer crosses it every few
+seconds; the selection bar fades in as you move; open conversations' ●
+markers breathe; a spinner shows while usage refreshes in the background.
+The ticker only runs while something moves (about 1% of a core while a
+marker pulses, nothing when idle). Turn it off with `"animations": false` in
+`theme.json`, or `TOPDOWN_REDUCED_MOTION=1`; it is also off without true
+colour.
 
 ## Development
 

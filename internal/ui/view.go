@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -30,10 +33,75 @@ func (h *Hub) View() tea.View {
 				return entryStyle{icon: icon, annotation: theme.Fg(theme.Dim, e.annotation)}
 			})
 		},
-		h.renderBody, h.footer())
+		h.renderBody, h.footer(), h.header())
 	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
+}
+
+// header is the logo band, when the window has room for it.
+func (h *Hub) header() func(w int) []string {
+	if h.height < 22 || h.width < 50 {
+		return nil
+	}
+	return func(w int) []string {
+		f := h.logoFrame()
+		var lines []string
+		if w >= logoWidth+30 {
+			lines = logo(f, "  v"+h.opts.Version)
+		} else {
+			lines = compactLogo(f)
+		}
+		open := len(h.live)
+		dim := func(s string) string { return theme.Fg(theme.Dim, s) }
+		stats := []string{
+			dim(fmt.Sprintf("%d apps", len(h.apps))),
+			"",
+			"",
+			dim("agents, from the top down"),
+		}
+		if open > 0 {
+			stats[0] += dim(" · ") + h.liveDot() + dim(fmt.Sprintf(" %d open", open))
+		}
+		if d := config.Default(); d != "" {
+			stats[1] = dim("default ") + theme.Agent(d, d)
+		}
+		for i := range lines {
+			// Stats only where they fit beside the logo; the logo is never cut.
+			if i < len(stats) && width(lines[i])+width(stats[i])+4 <= w {
+				lines[i] = spread(" "+lines[i], stats[i]+" ", w)
+			} else {
+				lines[i] = " " + lines[i]
+			}
+		}
+		return lines
+	}
+}
+
+// liveDot is the open-conversation marker, breathing when animated.
+func (h *Hub) liveDot() string {
+	h.anim.pulsing = true
+	if !theme.Animated() {
+		return theme.Fg(theme.Success, "●")
+	}
+	return theme.FgRGB(theme.Mix(theme.Green(), theme.Bg(), 0.6*h.pulse()), "●")
+}
+
+// selectBar paints the selection: a background that fades in, and fades out
+// toward the right edge; inverse video without true colour.
+func (h *Hub) selectBar(line string, w int) string {
+	if !theme.Rich() {
+		return theme.Selected(line)
+	}
+	f := h.fade()
+	bg, accent := theme.Bg(), theme.RoleColor(theme.Accent)
+	left, right := theme.Mix(bg, accent, 0.34*f), theme.Mix(bg, accent, 0.06*f)
+	var b strings.Builder
+	const step = 2
+	for x := 0; x < w; x += step {
+		b.WriteString(theme.BgRGB(theme.Mix(left, right, float64(x)/float64(max(1, w-1))), ansi.Cut(line, x, min(w, x+step))))
+	}
+	return b.String()
 }
 
 func (h *Hub) footer() string {
@@ -84,6 +152,7 @@ func (h *Hub) renderBody(w, height int) []string {
 		}
 		return out[:height]
 	}
+	h.anim.pulsing = false
 	h.search.SetWidth(max(1, w-5))
 	if h.focusScope {
 		h.search.Blur()
@@ -121,7 +190,7 @@ func (h *Hub) renderBody(w, height int) []string {
 		}
 		line = fit(line, w-2)
 		if h.scroll+i == h.cursor && !h.focusScope {
-			line = theme.Selected(line)
+			line = h.selectBar(line, w-2)
 		}
 		t := " "
 		if i < len(thumb) {
@@ -165,7 +234,7 @@ func (h *Hub) renderRow(r row, aw, lw int) string {
 	s := r.s
 	live := " "
 	if _, ok := h.live[s.ID]; ok {
-		live = theme.Fg(theme.Success, "●")
+		live = h.liveDot()
 	}
 	proj := util.Project(s.Cwd)
 	return " " + live + " " + theme.Age(s.When, pad(util.Stamp(s.When), 11)) + theme.Agent(s.Agent, pad(s.Agent, aw)) +
@@ -193,6 +262,9 @@ func (h *Hub) renderDetail(w int) []string {
 		if a.Agent == "" {
 			return []string{head}
 		}
+		if h.refreshing[a.Agent] {
+			head += "  " + theme.Fg(theme.Accent, h.spinner()) + dim(" refreshing usage…")
+		}
 		return append([]string{head}, usageLines(omarchy.ReadUsage(omarchy.UsageID(a.Usage, a.Agent)), w)...)
 	case rowSession:
 		s, found := catalog.Get(r.s.Agent, r.s.ID)
@@ -201,7 +273,7 @@ func (h *Hub) renderDetail(w int) []string {
 		}
 		live := ""
 		if _, ok := h.live[s.ID]; ok {
-			live = "  " + theme.Fg(theme.Success, "● open")
+			live = "  " + h.liveDot() + theme.Fg(theme.Success, " open")
 		}
 		out := []string{
 			theme.Bold(util.Oneline(s.Title, w)),

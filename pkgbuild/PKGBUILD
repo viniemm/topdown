@@ -1,5 +1,5 @@
 pkgname=topdown
-pkgver=0.7.0
+pkgver=0.8.0
 pkgrel=1
 pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
 arch=('x86_64' 'aarch64')
@@ -20,7 +20,7 @@ sha256sums=()
 build() {
   cd "$startdir/.."
   export CGO_ENABLED=0 GOFLAGS="-trimpath -mod=readonly -modcacherw"
-  go build -ldflags "-s -w" -o "$srcdir/topdown" ./cmd/topdown
+  go build -ldflags "-s -w -X main.version=$pkgver" -o "$srcdir/topdown" ./cmd/topdown
 }
 
 check() {

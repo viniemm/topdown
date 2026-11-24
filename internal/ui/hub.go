@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -80,7 +81,11 @@ type modal struct {
 
 type Options struct {
 	ChooseDefault bool
+	Version       string
 }
+
+// refreshDoneMsg: a background usage refresh finished.
+type refreshDoneMsg struct{ id string }
 
 type Hub struct {
 	opts          Options
@@ -102,12 +107,15 @@ type Hub struct {
 	modal      *modal
 	bodyRows   int
 	frame      frame
+	anim       animState
+	refreshing map[string]bool // agent ids whose usage is being refreshed
 	Result     Result
 }
 
 func New(opts Options) *Hub {
 	h := &Hub{opts: opts, scope: "apps", limit: page, live: map[string]int{}, width: 100, height: 30,
-		frame: frame{title: "topdown", minW: 16, maxW: 26}}
+		frame: frame{title: "topdown", minW: 16, maxW: 26}, refreshing: map[string]bool{}}
+	h.anim.init(time.Now())
 	h.search = textinput.New()
 	h.search.Prompt = ""
 	h.search.Focus()
@@ -123,7 +131,7 @@ func New(opts Options) *Hub {
 	return h
 }
 
-func (h *Hub) Init() tea.Cmd { return nil }
+func (h *Hub) Init() tea.Cmd { return h.schedule() }
 
 // ---------- data ----------
 
@@ -177,6 +185,7 @@ func (h *Hub) reload(keepCursor bool) {
 		prev = &p
 	}
 	h.rows = nil
+	h.live = agent.Live(h.sessionAgents()...) // for ● markers and the header's count
 	if h.scope == "apps" {
 		idx := make([]int, len(h.apps))
 		for i := range idx {
@@ -201,7 +210,6 @@ func (h *Hub) reload(keepCursor bool) {
 			limit = max(limit, searchLimit)
 		}
 		pg := catalog.Recent(agents, limit)
-		h.live = agent.Live(agents...)
 		sessions := pg.Sessions
 		if query != "" {
 			sessions = fuzzy.Rank(sessions, query, func(s agent.Session) string {
@@ -262,15 +270,26 @@ func (h *Hub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h.width, h.height = msg.Width, msg.Height
+	case tickMsg:
+		return h, h.onTick(msg)
+	case refreshDoneMsg:
+		delete(h.refreshing, msg.id)
+		return h, h.touch()
 	case tea.KeyPressMsg:
+		scope, cursor := h.scope, h.cursor
+		var cmd tea.Cmd
 		switch {
 		case h.modal != nil:
-			return h, h.modalKey(msg)
+			cmd = h.modalKey(msg)
 		case h.focusScope:
-			return h, h.scopeKey(msg.String())
+			cmd = h.scopeKey(msg.String())
 		default:
-			return h, h.bodyKey(msg)
+			cmd = h.bodyKey(msg)
 		}
+		if h.scope != scope || h.cursor != cursor {
+			h.anim.selAt = time.Now() // the selection bar fades in at its new row
+		}
+		return h, tea.Batch(cmd, h.touch())
 	case tea.PasteMsg:
 		if h.modal != nil && h.modal.kind == "input" {
 			var cmd tea.Cmd
@@ -405,12 +424,18 @@ func (h *Hub) bodyKey(msg tea.KeyPressMsg) tea.Cmd {
 		h.makeDefault()
 		return nil
 	case "ctrl+r":
-		if id := h.rowAgent(r); id != "" {
+		// Refreshing can take seconds: run it in the background with a spinner.
+		if id := h.rowAgent(r); id != "" && !h.refreshing[id] {
 			usage := ""
 			if r.kind == rowApp {
 				usage = h.apps[r.app].Usage
 			}
-			omarchy.RefreshUsage(omarchy.UsageID(usage, id))
+			h.refreshing[id] = true
+			uid := omarchy.UsageID(usage, id)
+			return func() tea.Msg {
+				omarchy.RefreshUsage(uid)
+				return refreshDoneMsg{id: id}
+			}
 		}
 		return nil
 	case "ctrl+a":

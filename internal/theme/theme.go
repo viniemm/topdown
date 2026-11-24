@@ -65,6 +65,7 @@ var (
 	selectedBg *RGB
 	agentColor = map[string]any{} // RGB or hue
 	overrides  = map[string]RGB{}
+	animations = true
 )
 
 func (p *Palette) hue(h hue) RGB {
@@ -89,6 +90,7 @@ func (p *Palette) hue(h hue) RGB {
 func Init(p *Palette) {
 	pal, roles, selectedBg = p, nil, nil
 	overrides = map[string]RGB{}
+	animations = os.Getenv("TOPDOWN_REDUCED_MOTION") == ""
 	if p != nil {
 		roles = []RGB{p.Accent, Mix(p.Bg, p.Accent, 0.55), Mix(p.Fg, p.Bg, 0.5), Mix(p.Fg, p.Bg, 0.22), p.Green, p.Yellow, p.Red}
 		s := Mix(p.Bg, p.Accent, 0.2)
@@ -116,6 +118,10 @@ func Init(p *Palette) {
 		if c, ok := Hex(str(o["selected"])); ok {
 			selectedBg = &c
 		}
+	}
+	var anim *bool
+	if json.Unmarshal(o["animations"], &anim) == nil && anim != nil && !*anim {
+		animations = false
 	}
 	var agents map[string]string
 	json.Unmarshal(o["agents"], &agents)
@@ -261,4 +267,47 @@ func Level(p float64, s string) string {
 		return fg(Mix(pal.Green, pal.Yellow, v/0.6), s)
 	}
 	return fg(Mix(pal.Yellow, pal.Red, (v-0.6)/0.4), s)
+}
+
+// ---- gradients and effects (true colour only) ----
+
+// Rich reports whether gradients and animated effects are available: a palette
+// is known (true colour). Without one, callers draw the plain version.
+func Rich() bool { return pal != nil }
+
+// Animated reports whether motion is wanted (true colour, not turned off by
+// "animations": false in theme.json or TOPDOWN_REDUCED_MOTION).
+func Animated() bool { return pal != nil && animations }
+
+// Bg and FgColor are the palette's background and text colours.
+func Bg() RGB      { return pal.Bg }
+func FgColor() RGB { return pal.Fg }
+
+// RoleColor is a role's true colour (only meaningful when Rich).
+func RoleColor(r Role) RGB { return roles[r] }
+
+// SelectedColor is the selection background (only meaningful when Rich).
+func SelectedColor() RGB { return *selectedBg }
+
+// LogoStops are the logo's gradient stops: magenta, the accent, cyan (omp uses pink → blue).
+func LogoStops() []RGB { return []RGB{pal.Magenta, pal.Accent, pal.Cyan} }
+
+// Green is the success colour (open-conversation markers pulse in it).
+func Green() RGB { return pal.Green }
+
+// Grad is the colour at t (0..1) along evenly spaced stops.
+func Grad(stops []RGB, t float64) RGB {
+	t = min(1, max(0, t))
+	if len(stops) == 1 {
+		return stops[0]
+	}
+	f := t * float64(len(stops)-1)
+	i := min(int(f), len(stops)-2)
+	return Mix(stops[i], stops[i+1], f-float64(i))
+}
+
+// FgRGB and BgRGB colour s with an explicit true colour.
+func FgRGB(c RGB, s string) string { return fg(c, s) }
+func BgRGB(c RGB, s string) string {
+	return fmt.Sprintf("\x1b[48;2;%d;%d;%dm%s\x1b[49m", c[0], c[1], c[2], s)
 }
