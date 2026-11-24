@@ -8,6 +8,7 @@ package ui
 //	fade      the selection bar fades in when the cursor moves
 //	pulse     open conversations' ● markers breathe
 //	spinner   while usage refreshes in the background
+//	scenery   the header's landscape: stars, clouds, water (4 fps)
 //
 // All of it is skipped without true colour or with reduced motion
 // ("animations": false in theme.json, or TOPDOWN_REDUCED_MOTION=1), except
@@ -49,7 +50,9 @@ type animState struct {
 	selAt        time.Time
 	gen          int
 	pending      time.Time // when the pending tick fires (zero: none)
-	pulsing      bool      // an open-conversation marker is on screen
+	pulsing      bool      // an open-conversation marker is on screen (keeps frames coming)
+	bodyPulsing  bool      // …in the body, which the header-only repaint can't refresh
+	scenery      bool      // the animated landscape is on screen
 }
 
 func (a *animState) init(now time.Time) {
@@ -111,10 +114,14 @@ func (h *Hub) nextFrame() time.Time {
 		(!h.anim.shimmerStart.IsZero() && now.Sub(h.anim.shimmerStart) < shimmerDur) {
 		return fast
 	}
+	next := h.anim.nextShimmer
 	if h.anim.pulsing {
-		return now.Add(pulseInterval)
+		next = now.Add(pulseInterval)
 	}
-	return h.anim.nextShimmer
+	if s := now.Add(sceneryInterval); h.anim.scenery && s.Before(next) {
+		next = s
+	}
+	return next
 }
 
 // schedule makes sure a tick is pending soon enough; it returns nil when the
