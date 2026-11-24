@@ -1,8 +1,8 @@
 # topdown roadmap
 
 topdown is growing from an Omarchy agent launcher (v0.4.4, bash + fzf + Python)
-into a general TUI harness for coding agents: TypeScript on Bun, with a TUI
-layer of its own modelled on omp's.
+into a general TUI harness for coding agents: a small Go binary on Bubble Tea
+and Lip Gloss, with a hub modelled on omp's model picker.
 
 ## M1 — parity on the new stack
 - Hub screen in the layout of omp's model picker: sidebar of
@@ -15,7 +15,7 @@ layer of its own modelled on omp's.
   `--effort`, `--permission-mode`, `--add-dir`, `--agent`, `--mcp-config`,
   `--fork-session`, …).
 - Pi, omp, Hermes (`--tui`), Antigravity ported from the Python helper.
-- `bun test` with fixture homes.
+- `go test` with fixture homes.
 
 ## M2 — every agent
 - Launch adapters for all agents Omarchy knows (opencode, copilot, crush,
@@ -38,7 +38,6 @@ Measured on real history: grep over 108 MB of Claude transcripts takes
 (`messages_fts_trigram`, ~40 ms). Fast enough to search as you type.
 
 ## Packaging notes
-- topdown has its own TUI layer (`src/tui/`, ~800 lines) modelled on omp's
-  pi-tui rather than depending on it, so there is no native addon: the
-  package is one `bun build --compile` binary (the Bun runtime, ~107 MB,
-  is most of it).
+- One static Go binary (`CGO_ENABLED=0`, pure-Go SQLite), about 10 MB;
+  `topdown list` runs in about 7 ms. The TypeScript/Bun build it replaced was
+  105 MB installed and took about 30 ms.

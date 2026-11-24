@@ -1,33 +1,36 @@
 pkgname=topdown
-pkgver=0.6.0
+pkgver=0.7.0
 pkgrel=1
 pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
-arch=('x86_64')
+arch=('x86_64' 'aarch64')
 url='https://github.com/viniemm/topdown'
 license=('MIT')
-depends=('bash' 'util-linux')
-optdepends=('omarchy: launch through omarchy-agent, plan-usage meters'
+depends=('bash' 'util-linux')   # the Omarchy shim is bash; setsid detaches new windows
+optdepends=('omarchy: launch through omarchy-agent, plan-usage meters, theme colours'
             'hyprland: switch to an already-open conversation'
             'xdg-terminal-exec: open agents in a new terminal window'
             'glib2: trash files that live on another filesystem')
-makedepends=('bun')
+makedepends=('go')
 provides=('omarchy-agent-launcher')
 conflicts=('omarchy-agent-launcher')
 replaces=('omarchy-agent-launcher')
-options=('!strip' '!debug')   # a bun --compile binary carries its payload; stripping breaks it
 source=()
 sha256sums=()
 
 build() {
   cd "$startdir/.."
-  bun install --frozen-lockfile
-  bun build --compile --minify src/main.ts --outfile "$srcdir/topdown"
+  export CGO_ENABLED=0 GOFLAGS="-trimpath -mod=readonly -modcacherw"
+  go build -ldflags "-s -w" -o "$srcdir/topdown" ./cmd/topdown
+}
+
+check() {
+  cd "$startdir/.."
+  go test ./cmd/... ./internal/...
 }
 
 package() {
   cd "$startdir/.."
-  install -Dm755 "$srcdir/topdown" "$pkgdir/usr/lib/topdown/topdown"
-  install -Dm755 bin/topdown "$pkgdir/usr/bin/topdown"
+  install -Dm755 "$srcdir/topdown" "$pkgdir/usr/bin/topdown"
   ln -s topdown "$pkgdir/usr/bin/omarchy-agent-launcher"   # old keybindings keep working
   install -Dm644 "$startdir/topdown.desktop" "$pkgdir/usr/share/applications/topdown.desktop"
   install -Dm644 "$startdir/topdown.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/topdown.svg"

@@ -1,0 +1,21 @@
+#!/bin/bash
+# mkhome <dir>: a fixture home with Claude/Pi/Hermes conversations, an app
+# list, and stand-in agents in <dir>/stub (put it first on PATH) that only log
+# their arguments to <dir>/calls.
+set -e
+T=$1; rm -rf "$T"
+mkdir -p $T/.claude/projects/-w-topdown $T/.claude/projects/-w-xfin $T/.claude/sessions $T/.pi/agent/sessions/--w-- \
+  $T/.hermes $T/.config/topdown $T/w/topdown $T/w/xfin $T/stub $T/.local/bin
+mk() { printf '%s\n' "{\"type\":\"user\",\"cwd\":\"$T/w/$2\",\"message\":{\"role\":\"user\",\"content\":\"$3\"}}" > $T/.claude/projects/-w-$2/$1.jsonl; touch -d "$4" $T/.claude/projects/-w-$2/$1.jsonl; }
+mk c1 topdown "Port the launcher to Go" "-5 min"; mk c2 xfin "Refactor the auth module" "-1 day"; mk c3 topdown "Write fixture tests" "-3 days"
+P=$T/.pi/agent/sessions/--w--/2026_p1.jsonl
+printf '%s\n' "{\"type\":\"session\",\"id\":\"p1\",\"cwd\":\"$T/w/xfin\"}" '{"type":"message","id":"aa11bb22","parentId":null,"message":{"role":"user","content":"pi prompt here"}}' > $P; touch -d "-2 hours" $P
+python3 - "$T" <<'PY'
+import sqlite3,sys,time
+c=sqlite3.connect(sys.argv[1]+"/.hermes/state.db"); c.executescript("create table sessions(id text, cwd text, title text, last_activity_at real, started_at real, hidden int, archived int, source text, message_count int); create table messages(id integer primary key, session_id text, role text, content text);")
+c.execute("insert into sessions values('h1',?,'Hermes chat',?,?,0,0,'tui',3)",(sys.argv[1]+'/w/topdown',time.time()-18000,time.time()-21600)); c.execute("insert into messages(session_id,role,content) values('h1','user','hello hermes')"); c.commit()
+PY
+echo '[{"id":"claude","label":"Claude Code","agent":"claude"},{"id":"pi","label":"Pi","agent":"pi"},{"id":"hermes","label":"Hermes","agent":"hermes"},{"id":"lg","label":"lazygit","command":"lazygit"}]' > $T/.config/topdown/apps.json
+for a in claude pi hermes; do printf '#!/bin/sh\necho "%s $* [cwd=$(pwd)]" >> %s/calls\n' $a $T > $T/stub/$a; chmod +x $T/stub/$a; cp $T/stub/$a $T/.local/bin/$a; done
+printf '#!/bin/sh\nwhile [ "${1#--}" != "$1" ]; do shift; done\nexec "$@"\n' > $T/stub/omarchy-launch-tui; chmod +x $T/stub/omarchy-launch-tui
+: > $T/calls

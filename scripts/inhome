@@ -1,0 +1,5 @@
+#!/bin/bash
+# inhome <fake-home> cmd…: run with HOME and every XDG base dir inside the fake
+# home. The session's own XDG_* vars would otherwise reach the real config.
+h=$1; shift
+exec env -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME HOME="$h" "$@"

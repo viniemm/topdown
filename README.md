@@ -1,11 +1,11 @@
 # topdown
 
 One TUI to launch, resume and manage coding agents: Claude Code, Codex,
-OpenCode, Pi, Oh My Pi, Hermes, Antigravity and the rest. TypeScript on Bun
-with a small TUI layer of its own (`src/tui/`), whose look and rendering
-approach come from studying omp's TUI ([pi-tui](https://github.com/can1357/oh-my-pi),
-MIT): the hub layout of its model picker, differential rendering inside
-synchronized output, semantic colours.
+OpenCode, Pi, Oh My Pi, Hermes, Antigravity and the rest. One small Go binary
+(about 10 MB, no runtime) on Charm's [Bubble Tea](https://github.com/charmbracelet/bubbletea)
+and Lip Gloss. The look comes from studying omp's model picker
+([pi-tui](https://github.com/can1357/oh-my-pi), MIT): a framed hub with a
+sidebar of scopes, a searchable list, a detail panel and a key bar.
 
 ```
 ╭─ topdown ────────┬──────────────────────────────────────────────────────────╮
@@ -58,13 +58,12 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
 
 ## How it works
 
-- **Agents** are adapters (`src/agents/`): how to launch one, its launch
+- **Agents** are adapters (`internal/agent/`): how to launch one, its launch
   options, and where its conversations live, how to resume, rename and delete
   them, and which are open right now. Claude Code, Pi, omp, Hermes and
   Antigravity have conversation support; the rest of Omarchy's agents launch.
-- **Running in place.** `bin/topdown` is a small wrapper: the UI writes what to
-  run (folder, environment, command) to a hand-off file and exits, and the
-  wrapper `exec`s it. The terminal becomes the agent; no runtime stays behind.
+- **Running in place.** When the hub closes, topdown `exec`s the agent, so the
+  terminal becomes it and nothing stays running behind it.
 - **Omarchy is optional.** When `omarchy-agent` exists, agents launch through
   it (auto-permission flags, account pinning, `~/Work`, the agent window
   class), via a PATH shim that adds resume and extra arguments. Plan usage is
@@ -87,22 +86,30 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
     git clone https://github.com/viniemm/topdown && cd topdown
     bin/install
 
-The package installs `/usr/bin/topdown` and the compiled UI in
-`/usr/lib/topdown/` (one self-contained binary: the Bun runtime plus topdown),
-and replaces the old `omarchy-agent-launcher` package (that name stays as a
-symlink).
+The package installs `/usr/bin/topdown` (one static binary) and replaces the
+old `omarchy-agent-launcher` package (that name stays as a symlink).
 
-Colours follow your terminal's palette, so they match the Omarchy theme. To
-override, put hex colours in `~/.config/topdown/theme.json` (roles: `accent`,
-`border`, `dim`, `muted`, `success`, `warning`, `error`, `selected`).
+## Colours
+
+True colour, taken from your Omarchy theme
+(`~/.local/state/omarchy/current/theme/colors.toml`), or, without Omarchy, asked
+from the terminal itself (OSC 4/10/11); the 16 ANSI colours are the last
+resort. Selection, borders and dim text are blended from that palette.
+Colour coding: each agent its own colour (its brand hue where the theme has
+it), each project a stable colour, timestamps fading with age, usage meters
+green → yellow → red. Override any of it in `~/.config/topdown/theme.json`:
+roles (`accent`, `border`, `dim`, `muted`, `success`, `warning`, `error`,
+`selected`) and `{"agents": {"claude": "#d97757"}}`.
 
 ## Development
 
-    bun install
-    bun src/main.ts          # or bin/topdown, which also does the exec hand-off
-    bun test                 # fixture home; never touches your real config or Trash
+    go run ./cmd/topdown     # the hub
+    go test ./...            # against a throwaway home; never touches your real config or Trash
+
+    scripts/mkhome .testhome/demo                    # a fixture home with sample conversations
+    PATH=.testhome/demo/stub:$PATH scripts/inhome .testhome/demo go run ./cmd/topdown
 
 See [ROADMAP.md](ROADMAP.md): every agent, MCP control, a skills manager,
 search inside conversations.
 
-The bash/fzf version is at tag `v0.4.4`.
+Earlier versions: bash/fzf at tag `v0.4.4`; TypeScript/Bun up to commit `b88035e` on `main`.
