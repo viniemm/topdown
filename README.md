@@ -93,7 +93,12 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
 **Arch (Omarchy or not):** install the package from the
 [latest release](https://github.com/viniemm/topdown/releases/latest):
 
-    sudo pacman -U https://github.com/viniemm/topdown/releases/download/v0.9.4/topdown-0.9.4-1-x86_64.pkg.tar.zst
+    curl -LO https://github.com/viniemm/topdown/releases/download/v0.9.4/topdown-0.9.4-1-x86_64.pkg.tar.zst
+    sudo pacman -U ./topdown-0.9.4-1-x86_64.pkg.tar.zst
+
+(Download first: given a URL, pacman wants a `.sig` signature next to the
+package, and these packages aren't signed yet. A local file only needs
+`LocalFileSigLevel = Optional`, pacman's default.)
 
 pacman owns the files: run the newer release's line to upgrade, and
 `sudo pacman -R topdown` to remove it. (An AUR package is coming; its

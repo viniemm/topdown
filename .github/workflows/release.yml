@@ -123,7 +123,7 @@ jobs:
           notes="**Arch / Omarchy**
 
           \`\`\`
-          sudo pacman -U $dl/$(ls *.pkg.tar.zst)
+          curl -LO $dl/$(ls *.pkg.tar.zst) && sudo pacman -U ./$(ls *.pkg.tar.zst)
           \`\`\`
 
           **Debian / Ubuntu** (amd64; arm64 below)
