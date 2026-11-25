@@ -45,13 +45,8 @@ func (h *Hub) View() tea.View {
 		}
 	}
 	content := h.render()
-	h.cache = viewCache{w: h.width, h: h.height, at: h.anim.now, lines: strings.Split(content, "\n"),
-		ok: h.fade() >= 1 && !h.anim.bodyPulsing && len(h.refreshing) == 0}
-	if h.height >= 22 && h.width >= 50 {
-		h.cache.head = len(logoMark)
-	} else {
-		h.cache.ok = false
-	}
+	h.cache = viewCache{w: h.width, h: h.height, at: h.anim.now, lines: strings.Split(content, "\n"), head: len(logoMark),
+		ok: h.hasHeader() && h.fade() >= 1 && !h.anim.bodyPulsing && len(h.refreshing) == 0}
 	return h.view(content)
 }
 
@@ -64,7 +59,7 @@ func (h *Hub) view(content string) tea.View {
 func (h *Hub) render() string {
 	h.anim.pulsing, h.anim.bodyPulsing = false, false // set again by whatever draws a marker
 	entries := h.entries()
-	content := h.frame.render(h.width, h.height, entries,
+	return h.frame.render(h.width, h.height, entries,
 		func(w, rows int) []string {
 			return h.frame.sidebar(entries, w, rows, h.scope, h.focusScope, func(e entry) entryStyle {
 				var icon string
@@ -76,17 +71,19 @@ func (h *Hub) render() string {
 				default:
 					icon = theme.Agent(e.label, "◆")
 				}
-				return entryStyle{icon: icon, annotation: theme.Fg(theme.Dim, e.annotation)}
+				return entryStyle{icon: icon, annotation: dim(e.annotation)}
 			})
 		},
 		h.renderBody, h.footer(), h.header())
-	return content
 }
+
+// hasHeader: the window has room for the logo band.
+func (h *Hub) hasHeader() bool { return h.height >= 22 && h.width >= 50 }
 
 // header is the logo band, when the window has room for it: the logo, and
 // the stats on the right. The logo is never cut.
 func (h *Hub) header() func(w int) []string {
-	if h.height < 22 || h.width < 50 {
+	if !h.hasHeader() {
 		return nil
 	}
 	return func(w int) []string {
@@ -98,7 +95,6 @@ func (h *Hub) header() func(w int) []string {
 			lines = compactLogo(f)
 		}
 		open := len(h.live)
-		dim := func(s string) string { return theme.Fg(theme.Dim, s) }
 		stats := []string{
 			dim(fmt.Sprintf("%d apps", len(h.apps))),
 			"",
@@ -160,7 +156,7 @@ func (h *Hub) selectBar(line string, w int) string {
 
 func (h *Hub) footer() string {
 	k := func(key, what string) string { return theme.Fg(theme.Accent, key) + " " + what }
-	sep := theme.Fg(theme.Dim, " · ")
+	sep := dim(" · ")
 	switch {
 	case h.modal != nil && h.modal.kind == "folders":
 		return strings.Join([]string{k("type", "search"), k("↑/↓", "folder"), k("Tab", "go into"), k("⏎", "start"), k("Alt-⏎", "new window"), k("esc", "back")}, sep)
@@ -262,7 +258,6 @@ func (h *Hub) renderBody(w, height int) []string {
 }
 
 func (h *Hub) renderRow(r row, aw, lw int) string {
-	dim := func(s string) string { return theme.Fg(theme.Dim, s) }
 	switch r.kind {
 	case rowApp:
 		a := h.apps[r.app]
@@ -303,7 +298,6 @@ func (h *Hub) renderDetail(w int) []string {
 	if !ok {
 		return nil
 	}
-	dim := func(s string) string { return theme.Fg(theme.Dim, s) }
 	switch r.kind {
 	case rowApp:
 		a := h.apps[r.app]
@@ -355,15 +349,14 @@ func (h *Hub) renderDetail(w int) []string {
 
 func (h *Hub) renderModal(w int) []string {
 	m := h.modal
-	hint := func(s string) string { return theme.Fg(theme.Dim, s) }
 	switch m.kind {
 	case "message":
-		return append(append([]string{}, m.lines...), "", hint("any key to go back"))
+		return append(append([]string{}, m.lines...), "", dim("any key to go back"))
 	case "confirm":
 		return append(append([]string{}, m.lines...), "", theme.Fg(theme.Accent, "y")+" yes   "+theme.Fg(theme.Accent, "n")+" no")
 	case "input":
 		m.input.SetWidth(max(1, w-12))
-		return []string{theme.Bold(m.title), "", truncate(m.input.View(), w), "", hint("⏎ save · esc cancel")}
+		return []string{theme.Bold(m.title), "", truncate(m.input.View(), w), "", dim("⏎ save · esc cancel")}
 	case "folders":
 		m.input.SetWidth(max(1, w-4))
 		out := []string{theme.Bold("New " + h.apps[m.app].Label + " conversation in…"), "", theme.Fg(theme.Accent, "› ") + truncate(m.input.View(), w-2), ""}
@@ -377,14 +370,14 @@ func (h *Hub) renderModal(w int) []string {
 				out = append(out, theme.Selected(fit(" "+where+"  "+meta, w)))
 				continue
 			}
-			tail := theme.Fg(theme.Dim, meta)
+			tail := dim(meta)
 			if r.create {
 				tail = theme.Fg(theme.Success, meta)
 			}
 			out = append(out, truncate(" "+theme.Project(util.Project(r.dir), where)+"  "+tail, w))
 		}
 		if len(m.choices) == 0 {
-			out = append(out, theme.Fg(theme.Dim, " no folders match"))
+			out = append(out, dim(" no folders match"))
 		}
 		return out
 	case "add":
@@ -409,7 +402,7 @@ func (h *Hub) renderModal(w int) []string {
 			if j == m.values[i] {
 				choices.WriteString(theme.Selected(theme.Fg(theme.Accent, " "+c+" ")))
 			} else {
-				choices.WriteString(theme.Fg(theme.Dim, " "+c+" "))
+				choices.WriteString(dim(" " + c + " "))
 			}
 		}
 		label := "  "
@@ -422,9 +415,9 @@ func (h *Hub) renderModal(w int) []string {
 	if a := agent.Get(m.agentID); a != nil {
 		bin = a.Bin
 	}
-	out = append(out, "", hint(strings.TrimSpace(bin+" "+strings.Join(sheetArgs(m), " "))))
+	out = append(out, "", dim(strings.TrimSpace(bin+" "+strings.Join(sheetArgs(m), " "))))
 	if help := m.options[m.cursor].Help; help != "" {
-		out = append(out, hint(help))
+		out = append(out, dim(help))
 	}
 	return out
 }
@@ -441,7 +434,7 @@ func scrollbar(total, visible, offset int) []string {
 		if i >= start && i < start+size {
 			out[i] = theme.Fg(theme.Accent, "█")
 		} else {
-			out[i] = theme.Fg(theme.Dim, "│")
+			out[i] = dim("│")
 		}
 	}
 	return out

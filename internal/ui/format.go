@@ -9,23 +9,25 @@ import (
 	"github.com/viniemm/topdown/internal/util"
 )
 
+// dim is secondary text: hints, metadata, empty states.
+func dim(s string) string { return theme.Fg(theme.Dim, s) }
+
 // bar is a meter: each filled cell takes its colour from its place on a
 // green → yellow → red gradient, so a fuller meter reaches further into red.
 func bar(p float64, w int) string {
 	v := min(1, max(0, p))
 	filled := int(v*float64(w) + 0.5)
 	if !theme.Rich() {
-		return theme.Level(v, strings.Repeat("█", filled)) + theme.Fg(theme.Dim, strings.Repeat("░", w-filled))
+		return theme.Level(v, strings.Repeat("█", filled)) + dim(strings.Repeat("░", w-filled))
 	}
 	var b strings.Builder
 	for i := range filled {
 		b.WriteString(theme.Level(float64(i)/float64(max(1, w-1)), "█"))
 	}
-	return b.String() + theme.Fg(theme.Dim, strings.Repeat("░", w-filled))
+	return b.String() + dim(strings.Repeat("░", w-filled))
 }
 
 func usageLines(u *omarchy.Usage, w int) []string {
-	dim := func(s string) string { return theme.Fg(theme.Dim, s) }
 	if u == nil {
 		return []string{dim("No plan limits to track (a harness or a plain TUI).")}
 	}

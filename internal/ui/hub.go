@@ -75,7 +75,7 @@ type addItem struct {
 }
 
 type modal struct {
-	kind     string // "message", "confirm", "input", "add", "sheet"
+	kind     string // "message", "confirm", "input", "add", "folders", "sheet"
 	lines    []string
 	onYes    func() error
 	title    string
@@ -100,6 +100,11 @@ type Options struct {
 	Version       string
 }
 
+type scopeAt struct {
+	scope  string
+	cursor int
+}
+
 // refreshDoneMsg: a background usage refresh finished.
 type refreshDoneMsg struct{ id string }
 
@@ -108,24 +113,21 @@ type Hub struct {
 	width, height int
 	apps          []config.App
 	scope         string
-	prevScope     *struct {
-		scope  string
-		cursor int
-	}
-	focusScope bool
-	rows       []row
-	cursor     int
-	scroll     int
-	limit      int
-	more       bool
-	live       map[string]int
-	search     textinput.Model
-	modal      *modal
-	bodyRows   int
-	frame      frame
-	anim       animState
-	refreshing map[string]bool // agent ids whose usage is being refreshed
-	cache      viewCache
+	prevScope     *scopeAt // where an agent's page was opened from
+	focusScope    bool
+	rows          []row
+	cursor        int
+	scroll        int
+	limit         int
+	more          bool
+	live          map[string]int
+	search        textinput.Model
+	modal         *modal
+	bodyRows      int
+	frame         frame
+	anim          animState
+	refreshing    map[string]bool // agent ids whose usage is being refreshed
+	cache         viewCache
 	// an agent's page: the folders its New rows can start in (zoxide first)
 	cands      []folders.Folder
 	candsAgent string
@@ -283,13 +285,14 @@ func (h *Hub) folderChoices(i int, query string) []row {
 		return out
 	}
 	// A typed path that's already a folder comes first, then what it completes to.
-	if p := folders.Expand(query, work); folders.IsPath(query) && util.IsDir(p) {
+	p := folders.Expand(query, work)
+	if folders.IsPath(query) && util.IsDir(p) {
 		add(h.knownFolder(p))
 	}
 	for _, f := range folders.Match(h.cands, query, work) {
 		add(f)
 	}
-	if p := folders.Expand(query, work); !util.IsDir(p) && validName(query) {
+	if !util.IsDir(p) && validName(query) {
 		out = append(out, row{kind: rowNew, app: i, dir: p, create: true})
 	}
 	return out
@@ -347,11 +350,19 @@ func (h *Hub) appIndex(agentID string) int {
 
 // openPage shows an agent's page: New conversation on top, its conversations below.
 func (h *Hub) openPage(app int) {
-	h.prevScope = &struct {
-		scope  string
-		cursor int
-	}{h.scope, h.cursor}
+	h.prevScope = &scopeAt{h.scope, h.cursor}
 	h.setScope("agent:"+h.apps[app].Agent, 0)
+}
+
+// goBack leaves an agent's page for where it was opened from (false: not on one).
+func (h *Hub) goBack() bool {
+	if !strings.HasPrefix(h.scope, "agent:") || h.prevScope == nil {
+		return false
+	}
+	p := *h.prevScope
+	h.prevScope = nil
+	h.setScope(p.scope, p.cursor)
+	return true
 }
 
 func (h *Hub) setScope(scope string, cursor int) {
@@ -409,16 +420,30 @@ func (h *Hub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return h, tea.Batch(cmd, h.touch())
 	case tea.PasteMsg:
 		if m := h.modal; m != nil && (m.kind == "input" || m.kind == "folders") {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			if m.kind == "folders" {
-				m.choices, m.cursor = h.folderChoices(m.app, strings.TrimSpace(m.input.Value())), 0
-			}
-			return h, cmd
+			return h, h.modalEdit(msg)
 		}
 		return h, h.edit(msg)
 	}
 	return h, nil
+}
+
+// modalEdit passes a key or paste to the modal's input; the folder picker
+// refilters when what's typed changed.
+func (h *Hub) modalEdit(msg tea.Msg) tea.Cmd {
+	m := h.modal
+	before := m.input.Value()
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if m.kind == "folders" && m.input.Value() != before {
+		h.refilter()
+	}
+	return cmd
+}
+
+// refilter recomputes the folder picker's choices for what's typed.
+func (h *Hub) refilter() {
+	m := h.modal
+	m.choices, m.cursor = h.folderChoices(m.app, strings.TrimSpace(m.input.Value())), 0
 }
 
 func (h *Hub) done(r Result) tea.Cmd {
@@ -499,11 +524,7 @@ func (h *Hub) bodyKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return h.activate(launch.Here, nil)
 	case "left":
-		if strings.HasPrefix(h.scope, "agent:") && h.prevScope != nil {
-			// Back out of an agent's view, search and all.
-			p := *h.prevScope
-			h.prevScope = nil
-			h.setScope(p.scope, p.cursor)
+		if h.goBack() { // out of an agent's view, search and all
 			return nil
 		}
 		if query != "" {
@@ -517,10 +538,7 @@ func (h *Hub) bodyKey(msg tea.KeyPressMsg) tea.Cmd {
 			h.reload(false)
 			return nil
 		}
-		if strings.HasPrefix(h.scope, "agent:") && h.prevScope != nil {
-			p := *h.prevScope
-			h.prevScope = nil
-			h.setScope(p.scope, p.cursor)
+		if h.goBack() {
 			return nil
 		}
 		return h.done(Result{Action: "quit"})
@@ -593,11 +611,9 @@ func (h *Hub) activate(where launch.Where, extra []string) tea.Cmd {
 	case rowApp:
 		app := h.apps[r.app]
 		if h.opts.ChooseDefault {
-			if app.Agent == "" {
-				h.message("Only agents can be the default agent.")
+			if !h.makeDefault() {
 				return nil
 			}
-			config.SetDefault(app.Agent)
 		} else if app.Agent != "" && where == launch.Here && extra == nil {
 			// An agent: its page, to pick a folder or a conversation.
 			// (Alt-Enter and the launch sheet still start it right away.)
@@ -633,16 +649,18 @@ func (h *Hub) activate(where launch.Where, extra []string) tea.Cmd {
 
 func (h *Hub) message(lines ...string) { h.modal = &modal{kind: "message", lines: lines} }
 
-func (h *Hub) makeDefault() {
+// makeDefault makes the current app the default agent (false: it isn't an agent).
+func (h *Hub) makeDefault() bool {
 	r, _ := h.current()
 	if r.kind != rowApp {
-		return
+		return false
 	}
 	if h.apps[r.app].Agent == "" {
 		h.message("Only agents can be the default agent.")
-		return
+		return false
 	}
 	config.SetDefault(h.apps[r.app].Agent)
+	return true
 }
 
 func newInput(prompt, value string) textinput.Model {
@@ -678,7 +696,7 @@ func (h *Hub) openAdd() {
 	for _, a := range agent.All {
 		if !listed[a.ID] && a.Installed() {
 			app := config.App{ID: a.ID, Label: a.Label, Agent: a.ID}
-			items = append(items, addItem{label: a.Label + "  " + theme.Fg(theme.Dim, a.ID), app: &app})
+			items = append(items, addItem{label: a.Label + "  " + dim(a.ID), app: &app})
 		}
 	}
 	items = append(items, addItem{label: theme.Fg(theme.Accent, "Custom command…")})
@@ -752,7 +770,7 @@ func (h *Hub) delete() {
 	case rowApp:
 		i := r.app
 		h.modal = &modal{kind: "confirm",
-			lines: []string{"Remove " + theme.Bold(h.apps[i].Label) + " from the list?", theme.Fg(theme.Dim, "It stays installed.")},
+			lines: []string{"Remove " + theme.Bold(h.apps[i].Label) + " from the list?", dim("It stays installed.")},
 			onYes: func() error {
 				h.apps = append(h.apps[:i], h.apps[i+1:]...)
 				h.reload(false)
@@ -778,7 +796,7 @@ func (h *Hub) delete() {
 		if s.Path != "" {
 			where = "It goes to the Trash."
 		}
-		lines = append(lines, theme.Fg(theme.Dim, where))
+		lines = append(lines, dim(where))
 		h.modal = &modal{kind: "confirm", lines: lines, onYes: func() error {
 			if err := del.Delete(s); err != nil {
 				return err
@@ -848,9 +866,7 @@ func (h *Hub) modalKey(msg tea.KeyPressMsg) tea.Cmd {
 			closeModal()
 			fail(m.onSubmit(m.input.Value()))
 		default:
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return cmd
+			return h.modalEdit(msg)
 		}
 	case "add":
 		switch key {
@@ -886,7 +902,7 @@ func (h *Hub) modalKey(msg tea.KeyPressMsg) tea.Cmd {
 			if m.cursor < len(m.choices) && !m.choices[m.cursor].create {
 				m.input.SetValue(util.ShortPath(m.choices[m.cursor].dir) + "/")
 				m.input.CursorEnd()
-				m.choices, m.cursor = h.folderChoices(m.app, m.input.Value()), 0
+				h.refilter()
 			}
 		case "enter", "alt+enter":
 			if m.cursor >= len(m.choices) {
@@ -900,13 +916,7 @@ func (h *Hub) modalKey(msg tea.KeyPressMsg) tea.Cmd {
 			closeModal()
 			return h.startNew(r, where, m.extra)
 		default:
-			before := m.input.Value()
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			if v := m.input.Value(); v != before {
-				m.choices, m.cursor = h.folderChoices(m.app, strings.TrimSpace(v)), 0
-			}
-			return cmd
+			return h.modalEdit(msg)
 		}
 	case "sheet":
 		o := m.options[m.cursor]

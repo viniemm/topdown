@@ -74,7 +74,7 @@ func logo(f logoFrame, version string) []string {
 			out[r] = theme.Fg(theme.Accent, logoMark[r]) + logoGap + theme.Bold(logoWord[r])
 		}
 		last := len(out) - 1
-		out[last] = ansi.Truncate(out[last], versionCol, "") + theme.Fg(theme.Dim, version)
+		out[last] = ansi.Truncate(out[last], versionCol, "") + dim(version)
 		return out
 	}
 	stops := theme.LogoStops()
@@ -111,7 +111,7 @@ func logo(f logoFrame, version string) []string {
 	}
 	if f.reveal >= 1 && version != "" {
 		last := len(out) - 1
-		out[last] = ansi.Truncate(out[last], versionCol, "") + theme.Fg(theme.Dim, version)
+		out[last] = ansi.Truncate(out[last], versionCol, "") + dim(version)
 	}
 	return out
 }
