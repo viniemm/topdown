@@ -7,10 +7,7 @@ and Lip Gloss. The look comes from studying omp's model picker
 ([pi-tui](https://github.com/can1357/oh-my-pi), MIT): a framed hub with a
 sidebar of scopes, a searchable list, a detail panel and a key bar.
 
-```
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/2485ac08-27f4-4441-af4f-93aa7933e843" />
-
-```
+![topdown on Omarchy: recent conversations, the app list with plan usage, and the folder picker for a new conversation](docs/screenshot.png)
 
 Pick something and the hub's own terminal becomes that agent; no second window.
 
