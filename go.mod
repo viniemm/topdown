@@ -3,13 +3,18 @@ module github.com/viniemm/topdown
 go 1.27.4
 
 require (
-	charm.land/bubbles/v2 v2.2.2 // indirect
-	charm.land/bubbletea/v2 v2.1.2 // indirect
+	charm.land/bubbles/v2 v2.2.2
+	charm.land/bubbletea/v2 v2.1.3
+	github.com/charmbracelet/x/ansi v0.11.10
+	golang.org/x/term v0.48.0
+	modernc.org/sqlite v1.63.0
+)
+
+require (
 	charm.land/lipgloss/v2 v2.1.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
-	github.com/charmbracelet/x/ansi v0.11.9 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20261125122737-8ed499892fb4 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
@@ -24,12 +29,10 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.8-0.20261110175422-3a370411ca06 // indirect
-	github.com/xo/terminfo v1.0.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
+	github.com/xo/terminfo v1.3.1 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
-	golang.org/x/term v0.48.0 // indirect
-	modernc.org/libc v1.80.1 // indirect
+	modernc.org/libc v1.82.13 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.63.0 // indirect
+	modernc.org/memory v1.13.0 // indirect
 )
