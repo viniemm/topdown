@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -12,9 +13,9 @@ import (
 	"github.com/viniemm/topdown/internal/util"
 )
 
-// ParsePi reads a Pi / Oh My Pi session (JSONL entries forming a tree). A name
+// parsePi reads a Pi / Oh My Pi session (JSONL entries forming a tree). A name
 // is the latest session_info entry (Pi's /name); omp may write a "title" entry.
-func ParsePi(file string) Parsed {
+func parsePi(file string) Parsed {
 	var cwd, title, name string
 	var prompts []string
 	eachLine(file, func(line string, n int) bool {
@@ -50,18 +51,11 @@ func ParsePi(file string) Parsed {
 		}
 		return true
 	})
-	t := name
-	if t == "" {
-		t = title
-	}
-	if t == "" && len(prompts) > 0 {
-		t = prompts[0]
-	}
-	return Parsed{Title: t, Cwd: cwd, Prompts: prompts}
+	return Parsed{Title: cmp.Or(name, title, first(prompts)), Cwd: cwd, Prompts: prompts}
 }
 
-// RenamePi appends a session_info entry on the current leaf (the last entry), as Pi's /name writes.
-func RenamePi(file, title string) error {
+// renamePi appends a session_info entry on the current leaf (the last entry), as Pi's /name writes.
+func renamePi(file, title string) error {
 	var last any
 	eachLine(file, func(line string, _ int) bool {
 		if strings.Contains(line, `"id"`) {
@@ -81,19 +75,14 @@ func RenamePi(file, title string) error {
 }
 
 type piStore struct {
-	files      fileStore
+	fileStore
 	resumeFlag string
 }
 
-func (p piStore) List(limit int) []Session      { return p.files.list(limit) }
-func (p piStore) Get(id string) (Session, bool) { return p.files.get(id) }
 func (p piStore) ResumeArgs(id string) []string { return []string{p.resumeFlag, id} }
 
 func (p piStore) Delete(s Session) error {
-	file := s.Path
-	if file == "" {
-		file = s.ID
-	}
+	file := p.fileOf(s)
 	if _, err := os.Stat(file); err != nil {
 		return errors.New("that conversation is already gone")
 	}
@@ -103,16 +92,10 @@ func (p piStore) Delete(s Session) error {
 // piRenamer adds rename to Pi only: omp's on-disk naming isn't confirmed yet.
 type piRenamer struct{ piStore }
 
-func (p piRenamer) Rename(s Session, title string) error {
-	file := s.Path
-	if file == "" {
-		file = s.ID
-	}
-	return RenamePi(file, title)
-}
+func (p piRenamer) Rename(s Session, title string) error { return renamePi(p.fileOf(s), title) }
 
 func piFiles(id, dir string) fileStore {
-	return fileStore{agent: id, pattern: dir + "/agent/sessions/*/*.jsonl", parse: ParsePi, byPath: true}
+	return fileStore{agent: id, pattern: dir + "/agent/sessions/*/*.jsonl", parse: parsePi, byPath: true}
 }
 
 var (

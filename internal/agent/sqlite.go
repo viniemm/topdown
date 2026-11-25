@@ -3,6 +3,7 @@ package agent
 // Agents whose sessions live in SQLite: Hermes and Antigravity (read-only access).
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -49,7 +50,13 @@ func runTool(argv ...string) error {
 	return nil
 }
 
-func ns(v sql.NullString) string { return v.String }
+// only is the one session a lookup by id found.
+func only(ss []Session) (Session, bool) {
+	if len(ss) > 0 {
+		return ss[0], true
+	}
+	return Session{}, false
+}
 
 // ---- Hermes ----
 
@@ -75,10 +82,7 @@ func hermesSessions(limit int, sid string) []Session {
 		if title.String == "" && !util.IsUserText(first.String) {
 			return nil
 		}
-		s := Session{Agent: "hermes", ID: id, Cwd: ns(cwd), Title: title.String, When: util.Epoch(ts)}
-		if s.Title == "" {
-			s.Title = first.String
-		}
+		s := Session{Agent: "hermes", ID: id, Cwd: cwd.String, Title: cmp.Or(title.String, first.String), When: util.Epoch(ts)}
 		if first.String != "" {
 			s.Prompts = []string{first.String}
 		}
@@ -90,13 +94,8 @@ func hermesSessions(limit int, sid string) []Session {
 
 type hermesStore struct{}
 
-func (hermesStore) List(limit int) []Session { return hermesSessions(limit, "") }
-func (hermesStore) Get(id string) (Session, bool) {
-	if s := hermesSessions(1, id); len(s) > 0 {
-		return s[0], true
-	}
-	return Session{}, false
-}
+func (hermesStore) List(limit int) []Session      { return hermesSessions(limit, "") }
+func (hermesStore) Get(id string) (Session, bool) { return only(hermesSessions(1, id)) }
 func (hermesStore) ResumeArgs(id string) []string { return []string{"--resume", id} }
 func (hermesStore) Rename(s Session, title string) error {
 	return runTool("hermes", "sessions", "rename", s.ID, title)
@@ -140,10 +139,7 @@ func agySessions(limit int, sid string) []Session {
 		if json.Unmarshal([]byte(ws.String), &uris) == nil && len(uris) > 0 {
 			cwd = strings.TrimPrefix(uris[0], "file://")
 		}
-		s := Session{Agent: "agy", ID: id, Cwd: cwd, Title: title.String, When: util.Epoch(ts)}
-		if s.Title == "" {
-			s.Title = preview.String
-		}
+		s := Session{Agent: "agy", ID: id, Cwd: cwd, Title: cmp.Or(title.String, preview.String), When: util.Epoch(ts)}
 		if preview.String != "" {
 			s.Prompts = []string{preview.String}
 		}
@@ -155,13 +151,8 @@ func agySessions(limit int, sid string) []Session {
 
 type agyStore struct{}
 
-func (agyStore) List(limit int) []Session { return agySessions(limit, "") }
-func (agyStore) Get(id string) (Session, bool) {
-	if s := agySessions(1, id); len(s) > 0 {
-		return s[0], true
-	}
-	return Session{}, false
-}
+func (agyStore) List(limit int) []Session      { return agySessions(limit, "") }
+func (agyStore) Get(id string) (Session, bool) { return only(agySessions(1, id)) }
 func (agyStore) ResumeArgs(id string) []string { return []string{"--conversation", id} }
 
 var Agy = &Adapter{ID: "agy", Label: "Antigravity", Bin: "agy", Sessions: agyStore{}}

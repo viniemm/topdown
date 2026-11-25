@@ -125,7 +125,7 @@ func TestClaudeLive(t *testing.T) {
 	home := fixture(t)
 	write(t, home, ".claude/sessions/1.json", []any{map[string]any{"pid": os.Getpid(), "sessionId": "c2"}}, 0)
 	write(t, home, ".claude/sessions/2.json", []any{map[string]any{"pid": 1 << 22, "sessionId": "c3"}}, 0) // no such process
-	live := agent.ClaudeLive()
+	live := agent.Live("claude")
 	if live["c2"] != os.Getpid() {
 		t.Fatalf("live %v", live)
 	}

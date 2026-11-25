@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,9 +13,9 @@ import (
 	"github.com/viniemm/topdown/internal/util"
 )
 
-// ParseClaude reads a Claude Code transcript: title (custom > ai > first real
+// parseClaude reads a Claude Code transcript: title (custom > ai > first real
 // prompt), latest working directory, first prompts.
-func ParseClaude(file string) Parsed {
+func parseClaude(file string) Parsed {
 	var cwd, custom, ai string
 	var prompts []string
 	eachLine(file, func(line string, _ int) bool {
@@ -56,40 +57,21 @@ func ParseClaude(file string) Parsed {
 		}
 		return true
 	})
-	title := custom
-	if title == "" {
-		title = ai
-	}
-	if title == "" && len(prompts) > 0 {
-		title = prompts[0]
-	}
-	return Parsed{Title: title, Cwd: cwd, Prompts: prompts}
+	return Parsed{Title: cmp.Or(custom, ai, first(prompts)), Cwd: cwd, Prompts: prompts}
 }
 
-type claudeStore struct{ files fileStore }
+type claudeStore struct{ fileStore }
 
-var claudeFiles = fileStore{agent: "claude", pattern: ".claude/projects/*/*.jsonl", parse: ParseClaude}
-
-func (c claudeStore) List(limit int) []Session      { return c.files.list(limit) }
-func (c claudeStore) Get(id string) (Session, bool) { return c.files.get(id) }
-func (c claudeStore) ResumeArgs(id string) []string { return []string{"--resume", id} }
-func (c claudeStore) Live() map[string]int          { return ClaudeLive() }
+func (claudeStore) ResumeArgs(id string) []string { return []string{"--resume", id} }
 
 // Rename appends what Claude's own /rename writes.
 func (c claudeStore) Rename(s Session, title string) error {
-	file := s.Path
-	if file == "" {
-		file = c.files.fileFor(s.ID)
-	}
-	return appendJSONL(file, []kv{{"type", "custom-title"}, {"customTitle", title}, {"sessionId", s.ID}})
+	return appendJSONL(c.fileOf(s), []kv{{"type", "custom-title"}, {"customTitle", title}, {"sessionId", s.ID}})
 }
 
 // Delete moves the transcript, and the sibling folder of subagent transcripts, to the Trash.
 func (c claudeStore) Delete(s Session) error {
-	file := s.Path
-	if file == "" {
-		file = c.files.fileFor(s.ID)
-	}
+	file := c.fileOf(s)
 	if file == "" {
 		return errors.New("that conversation is already gone")
 	}
@@ -100,8 +82,8 @@ func (c claudeStore) Delete(s Session) error {
 	return Trash(files...)
 }
 
-// ClaudeLive lists running sessions: Claude Code records each in ~/.claude/sessions/<pid>.json.
-func ClaudeLive() map[string]int {
+// Live lists running sessions: Claude Code records each in ~/.claude/sessions/<pid>.json.
+func (claudeStore) Live() map[string]int {
 	live := map[string]int{}
 	files, _ := filepath.Glob(filepath.Join(util.Home(), ".claude/sessions/*.json"))
 	for _, f := range files {
@@ -156,5 +138,5 @@ var Claude = &Adapter{
 	// omarchy-agent adds this too; without Omarchy topdown adds it itself.
 	LaunchArgs: []string{"--permission-mode", "auto"},
 	Options:    claudeOptions,
-	Sessions:   claudeStore{claudeFiles},
+	Sessions:   claudeStore{fileStore{agent: "claude", pattern: ".claude/projects/*/*.jsonl", parse: parseClaude}},
 }

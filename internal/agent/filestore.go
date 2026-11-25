@@ -120,8 +120,8 @@ func (f fileStore) session(file string, st os.FileInfo) (Session, bool) {
 		When: float64(st.ModTime().UnixMilli()) / 1000, Prompts: info.Prompts, Path: file}, true
 }
 
-// list returns up to limit sessions, newest first; only shown files are parsed.
-func (f fileStore) list(limit int) []Session {
+// List returns up to limit sessions, newest first; only shown files are parsed.
+func (f fileStore) List(limit int) []Session {
 	type cand struct {
 		file string
 		st   os.FileInfo
@@ -159,11 +159,27 @@ func (f fileStore) fileFor(id string) string {
 	return m[0]
 }
 
-func (f fileStore) get(id string) (Session, bool) {
+func (f fileStore) Get(id string) (Session, bool) {
 	if file := f.fileFor(id); file != "" {
 		return f.session(file, nil)
 	}
 	return Session{}, false
+}
+
+// fileOf is a session's file: the one it was listed with, else found by id ("" when gone).
+func (f fileStore) fileOf(s Session) string {
+	if s.Path != "" {
+		return s.Path
+	}
+	return f.fileFor(s.ID)
+}
+
+// first is the first of ss, or "" (a title's last fallback: the first prompt).
+func first(ss []string) string {
+	if len(ss) > 0 {
+		return ss[0]
+	}
+	return ""
 }
 
 func escapeGlob(s string) string {
