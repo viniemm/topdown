@@ -1,0 +1,52 @@
+# .deb and .rpm packages, built by nfpm (https://nfpm.goreleaser.com) from a
+# binary already built for $GOARCH:
+#   VERSION=0.9.3 ARCH=amd64 BIN=dist/topdown-amd64 nfpm pkg -f packaging/nfpm.yaml -p deb -t dist/
+# The release workflow does this for amd64 and arm64.
+name: topdown
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+release: 1
+section: devel
+priority: optional
+maintainer: Vinayak Mathur <vinayakrulez@gmail.com>
+description: |-
+  One TUI to launch, resume and manage coding agents and their conversations
+  Claude Code, Codex, OpenCode, Pi, Hermes, Antigravity and more: a searchable
+  hub of agents and their recent conversations, resumed in place or in a new
+  terminal window.
+homepage: https://github.com/viniemm/topdown
+license: MIT
+
+contents:
+  - src: ${BIN}
+    dst: /usr/bin/topdown
+    file_info: {mode: 0755}
+  - src: pkgbuild/topdown.desktop
+    dst: /usr/share/applications/topdown.desktop
+    file_info: {mode: 0644}
+  - src: pkgbuild/topdown.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/topdown.svg
+    file_info: {mode: 0644}
+  - src: README.md
+    dst: /usr/share/doc/topdown/README.md
+    file_info: {mode: 0644}
+  - src: LICENSE
+    dst: /usr/share/doc/topdown/copyright
+    packager: deb
+    file_info: {mode: 0644}
+  - src: LICENSE
+    dst: /usr/share/licenses/topdown/LICENSE
+    packager: rpm
+    type: license
+    file_info: {mode: 0644}
+
+# bash runs the Omarchy shim; setsid (util-linux) detaches new windows. The
+# binary is static, so nothing else is needed. Everything optional is a suggestion.
+overrides:
+  deb:
+    depends: [bash, util-linux]
+    suggests: [xdg-terminal-exec, zoxide, libnotify-bin, libglib2.0-bin]
+  rpm:
+    depends: [bash, /usr/bin/setsid]
+    suggests: [xdg-terminal-exec, zoxide, libnotify, glib2]

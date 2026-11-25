@@ -99,6 +99,18 @@ pacman owns the files: run the newer release's line to upgrade, and
 `sudo pacman -R topdown` to remove it. (An AUR package is coming; its
 PKGBUILD is in `aur/topdown`.)
 
+**Debian, Ubuntu:**
+
+    curl -LO https://github.com/viniemm/topdown/releases/download/v0.9.3/topdown_0.9.3-1_amd64.deb
+    sudo apt install ./topdown_0.9.3-1_amd64.deb
+
+**Fedora:**
+
+    sudo dnf install https://github.com/viniemm/topdown/releases/download/v0.9.3/topdown-0.9.3-1.x86_64.rpm
+
+Each release also has arm64 / aarch64 builds and a `.sha256` for every file.
+Remove with `sudo apt remove topdown` or `sudo dnf remove topdown`.
+
 **From source, any distro:**
 
     git clone https://github.com/viniemm/topdown && cd topdown
@@ -109,7 +121,7 @@ checkout (`makepkg -si`): `/usr/bin/topdown`, one binary, plus the launcher
 entry. It replaces the old `omarchy-agent-launcher` package (that name stays
 as a symlink). Run it again to upgrade; `pacman -R topdown` removes it.
 
-On **Fedora, Debian, Ubuntu and the rest**, `bin/install` builds with Go and
+On **any other distro** (or to build Fedora, Debian or Ubuntu from source), `bin/install` builds with Go and
 installs for your user into `~/.local` (`bin/topdown`, the launcher entry and
 icon); no root needed. Building needs Go and git:
 

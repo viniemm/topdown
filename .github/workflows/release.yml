@@ -1,15 +1,29 @@
-# On a v* tag: build aur/topdown/PKGBUILD in a fresh Arch container (only
-# base-devel plus what the PKGBUILD declares, so a missing dependency fails
-# here) and publish the package on the GitHub release, for
-#   sudo pacman -U https://github.com/viniemm/topdown/releases/download/vX.Y.Z/topdown-X.Y.Z-1-x86_64.pkg.tar.zst
+# On a v* tag: build the packages, install-test each on its own distro, then
+# publish them on the GitHub release.
+#   Arch:           aur/topdown/PKGBUILD in a fresh archlinux:base-devel
+#                   container (only what the PKGBUILD declares, so a missing
+#                   dependency fails here), checked with namcap
+#   Debian, Fedora: packaging/nfpm.yaml, amd64 and arm64, installed and
+#                   linted on debian:stable and fedora:latest
+# Run it by hand (Actions → release → Run workflow) to add packages to an
+# existing release: files the release already has are left as they are.
 name: release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z)
+        required: true
 
 permissions:
   contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  NFPM: github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0
 
 jobs:
   arch:
@@ -17,15 +31,13 @@ jobs:
     container: archlinux:base-devel
     steps:
       - name: Install build tools
-        run: pacman -Syu --noconfirm --needed git github-cli namcap
-
+        run: pacman -Syu --noconfirm --needed git namcap
       - uses: actions/checkout@v4
-
+        with: {ref: '${{ env.TAG }}'}
       - name: Check the tag matches pkgver
         run: |
           pkgver=$(sed -n 's/^pkgver=//p' aur/topdown/PKGBUILD)
-          [ "v$pkgver" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME but pkgver=$pkgver"; exit 1; }
-
+          [ "v$pkgver" = "$TAG" ] || { echo "tag $TAG but pkgver=$pkgver"; exit 1; }
       - name: Build the package
         run: |
           # makepkg refuses to run as root; -s installs the PKGBUILD's own dependencies.
@@ -35,21 +47,103 @@ jobs:
           cd /home/builder/topdown
           sudo -u builder makepkg -s --noconfirm
           namcap PKGBUILD *.pkg.tar.zst
+          mkdir -p "$GITHUB_WORKSPACE/dist" && cp *.pkg.tar.zst "$GITHUB_WORKSPACE/dist/"
+      - uses: actions/upload-artifact@v4
+        with: {name: arch, path: dist/}
 
+  debrpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: '${{ env.TAG }}'}
+      - uses: actions/setup-go@v5
+        with: {go-version: stable}
+      - name: Build binaries and packages
+        run: |
+          version=${TAG#v}
+          go install "$NFPM"
+          go test ./...
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/topdown-$arch" ./cmd/topdown
+            for fmt in deb rpm; do
+              VERSION=$version ARCH=$arch BIN=dist/topdown-$arch nfpm pkg -f packaging/nfpm.yaml -p $fmt -t dist/
+            done
+          done
+          rm dist/topdown-amd64 dist/topdown-arm64
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with: {name: debrpm, path: dist/}
+
+  debian:
+    needs: debrpm
+    runs-on: ubuntu-latest
+    container: debian:stable
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: debrpm, path: dist}
+      - name: Install and run
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq ./dist/*_amd64.deb lintian
+          topdown version
+          topdown help
+          lintian --info dist/*_amd64.deb || true   # report only; the static Go binary trips a few tags
+
+  fedora:
+    needs: debrpm
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: debrpm, path: dist}
+      - name: Install and run
+        run: |
+          dnf install -y -q ./dist/*.x86_64.rpm rpmlint
+          topdown version
+          topdown help
+          rpmlint dist/*.x86_64.rpm || true   # report only
+
+  publish:
+    needs: [arch, debian, fedora]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {path: dist, merge-multiple: true}
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          pkg=$(ls /home/builder/topdown/*.pkg.tar.zst)
-          sha256sum "$pkg" | sed 's|/home/builder/topdown/||' > "$pkg.sha256"
-          notes="Arch / Omarchy:
+          cd dist
+          for f in *.pkg.tar.zst *.deb *.rpm; do sha256sum "$f" > "$f.sha256"; done
+          ls -l
+          version=${TAG#v}
+          dl="https://github.com/$REPO/releases/download/$TAG"
+          notes="**Arch / Omarchy**
 
           \`\`\`
-          sudo pacman -U https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$(basename "$pkg")
+          sudo pacman -U $dl/$(ls *.pkg.tar.zst)
           \`\`\`
 
-          Other distros: \`git clone\` and \`bin/install\` (see the README)."
-          gh release create "$GITHUB_REF_NAME" "$pkg" "$pkg.sha256" \
-            --repo "$GITHUB_REPOSITORY" --title "topdown ${GITHUB_REF_NAME#v}" \
-            --notes "$notes" --generate-notes
+          **Debian / Ubuntu** (amd64; arm64 below)
+
+          \`\`\`
+          curl -LO $dl/topdown_${version}-1_amd64.deb && sudo apt install ./topdown_${version}-1_amd64.deb
+          \`\`\`
+
+          **Fedora** (x86_64; aarch64 below)
+
+          \`\`\`
+          sudo dnf install $dl/topdown-${version}-1.x86_64.rpm
+          \`\`\`
+
+          Anything else: \`git clone\` and \`bin/install\` (see the README)."
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            have=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
+            new=()
+            for f in *; do grep -qxF "$f" <<<"$have" || new+=("$f"); done
+            [ ${#new[@]} -eq 0 ] || gh release upload "$TAG" "${new[@]}" --repo "$REPO"
+          else
+            gh release create "$TAG" * --repo "$REPO" --title "topdown $version" --notes "$notes" --generate-notes
+          fi
