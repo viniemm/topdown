@@ -19,6 +19,6 @@ pkgbase = topdown
 	optdepends = zoxide: rank folder suggestions by frecency
 	options = !debug
 	source = topdown-0.9.4.tar.gz::https://github.com/viniemm/topdown/archive/refs/tags/v0.9.4.tar.gz
-	sha256sums = SKIP
+	sha256sums = 0945e9728fe0e05ebfc036033b5e14a8082e872e6f3e3da3c7dd7eae9f9f1052
 
 pkgname = topdown
