@@ -3,6 +3,7 @@
 package launch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,12 +25,17 @@ const (
 	Window
 )
 
-// Spec is what to run: argv in Cwd (if set) with Env added.
+// Spec is what to run: argv in Cwd (if set) with Env added. Err is set when
+// it can't run at all (a new window with no terminal to open it in).
 type Spec struct {
 	Argv []string
 	Cwd  string
 	Env  map[string]string
+	Err  error
 }
+
+// ErrNoTerminal is a new-window launch with no terminal to open the window.
+var ErrNoTerminal = errors.New("no terminal found: install xdg-terminal-exec or set $TERMINAL")
 
 func agentSpec(agentID string, args []string, cwd string, where Where) Spec {
 	// Launches from $HOME start in the workdir (~/Work, as omarchy-agent does).
@@ -56,7 +62,7 @@ func agentSpec(agentID string, args []string, cwd string, where Where) Spec {
 	}
 	argv := append(append([]string{bin}, launchArgs...), args...)
 	if where == Window {
-		argv = inTerminal(argv)
+		return window(argv, cwd)
 	}
 	return Spec{Argv: argv, Cwd: cwd}
 }
@@ -111,9 +117,13 @@ func Terminal(title string, argv []string) (out []string, ok bool) {
 	return argv, false
 }
 
-func inTerminal(argv []string) []string {
-	out, _ := Terminal("", argv)
-	return out
+// window is a spec that runs argv in a new terminal window.
+func window(argv []string, cwd string) Spec {
+	out, ok := Terminal("", argv)
+	if !ok {
+		return Spec{Err: ErrNoTerminal}
+	}
+	return Spec{Argv: out, Cwd: cwd}
 }
 
 // App launches an app from the list, with launch-sheet arguments, in cwd
@@ -135,7 +145,7 @@ func Command(argv []string, where Where) Spec {
 	case omarchy.Present():
 		return Spec{Argv: append([]string{"omarchy-launch-tui", "--app-id=" + omarchy.WindowClass}, argv...)}
 	}
-	return Spec{Argv: inTerminal(argv)}
+	return window(argv, "")
 }
 
 // Resume continues a conversation in its own project directory.
@@ -171,6 +181,9 @@ func envArgs(s Spec) []string {
 
 // ExecHere replaces this process with the spec, so the terminal becomes the agent.
 func ExecHere(s Spec, title string) error {
+	if s.Err != nil {
+		return s.Err
+	}
 	if title != "" {
 		fmt.Printf("\x1b]2;%s\x07", title)
 	}
@@ -214,6 +227,9 @@ func lookPath(name, path string) (string, error) {
 // `systemd-run --scope`, which stays in the foreground until that terminal
 // closes, so detach fully (setsid -f) and log the terminal's chatter.
 func ExecWindow(s Spec) error {
+	if s.Err != nil {
+		return s.Err
+	}
 	logPath := filepath.Join(util.StateDir(), "launch.log")
 	os.MkdirAll(filepath.Dir(logPath), 0o755)
 	log, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)

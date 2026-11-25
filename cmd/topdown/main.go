@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"golang.org/x/term"
 
 	"github.com/viniemm/topdown/internal/catalog"
 	"github.com/viniemm/topdown/internal/config"
@@ -36,6 +37,10 @@ const usage = "topdown [pick|open|default|launch <app>|resume <agent> <id>|list 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "topdown:", err)
+		// From a keybinding there is no terminal to read stderr in.
+		if !term.IsTerminal(int(os.Stderr.Fd())) && util.Which("notify-send") != "" {
+			exec.Command("notify-send", "--app-name=topdown", "topdown", err.Error()).Run()
+		}
 		os.Exit(1)
 	}
 }
@@ -138,7 +143,7 @@ func openWindow(args []string) error {
 	}
 	argv, ok := launch.Terminal("topdown", append([]string{self, "pick"}, args...))
 	if !ok {
-		return fmt.Errorf("no terminal found: install xdg-terminal-exec or set $TERMINAL")
+		return launch.ErrNoTerminal
 	}
 	if util.Which("uwsm-app") != "" {
 		argv = append([]string{"uwsm-app", "--"}, argv...)

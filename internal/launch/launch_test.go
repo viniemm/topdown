@@ -2,6 +2,7 @@ package launch_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -120,5 +121,21 @@ func TestTerminalNoneFound(t *testing.T) {
 	onPath(t)
 	if got, ok := launch.Terminal("", []string{"x"}); ok || !slices.Equal(got, []string{"x"}) {
 		t.Fatalf("got %q %v", got, ok)
+	}
+}
+
+func TestWindowWithoutTerminalFails(t *testing.T) {
+	home := testhome.New(t)
+	stubs(t, home, false)
+	t.Setenv("TERMINAL", "")
+	s := launch.App(config.App{ID: "claude", Label: "Claude", Agent: "claude"}, launch.Window, nil, "")
+	if !errors.Is(s.Err, launch.ErrNoTerminal) {
+		t.Fatalf("got %+v", s)
+	}
+	if err := launch.ExecWindow(s); !errors.Is(err, launch.ErrNoTerminal) {
+		t.Fatalf("ExecWindow: %v", err)
+	}
+	if s := launch.Command([]string{"x"}, launch.Window); !errors.Is(s.Err, launch.ErrNoTerminal) {
+		t.Fatalf("Command: %+v", s)
 	}
 }
