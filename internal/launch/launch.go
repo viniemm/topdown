@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -60,16 +61,59 @@ func agentSpec(agentID string, args []string, cwd string, where Where) Spec {
 	return Spec{Argv: argv, Cwd: cwd}
 }
 
-func inTerminal(argv []string) []string {
+// terminals are tried in order when xdg-terminal-exec is missing: the command
+// that opens a window, the window-class and title flags (empty: it has none),
+// and what goes between the flags and the command to run.
+var terminals = []struct {
+	cmd          []string
+	class, title string
+	run          []string
+}{
+	{[]string{"foot"}, "--app-id=", "--title=", nil},
+	{[]string{"kitty"}, "--class=", "--title=", nil},
+	{[]string{"alacritty"}, "--class=", "--title=", []string{"-e"}},
+	{[]string{"ghostty"}, "--class=", "--title=", []string{"-e"}},
+	{[]string{"wezterm", "start"}, "--class=", "", []string{"--"}},
+	{[]string{"ptyxis"}, "", "", []string{"--"}},
+	{[]string{"gnome-terminal"}, "--class=", "--title=", []string{"--"}},
+	{[]string{"konsole"}, "", "", []string{"-e"}},
+	{[]string{"xfce4-terminal"}, "", "--title=", []string{"-x"}},
+	{[]string{"xterm"}, "", "", []string{"-e"}},
+}
+
+// Terminal wraps argv to run in a new terminal window with the agent window
+// class: xdg-terminal-exec when there is one, else $TERMINAL, else the first
+// known terminal installed. ok is false when there is no terminal to use.
+func Terminal(title string, argv []string) (out []string, ok bool) {
 	if util.Which("xdg-terminal-exec") != "" {
-		return append([]string{"xdg-terminal-exec", "--app-id=" + omarchy.WindowClass, "-e"}, argv...)
-	}
-	for _, t := range []string{"foot", "kitty", "alacritty", "wezterm", "ghostty"} {
-		if util.Which(t) != "" {
-			return append([]string{t, "-e"}, argv...)
+		out = []string{"xdg-terminal-exec", "--app-id=" + omarchy.WindowClass}
+		if title != "" {
+			out = append(out, "--title="+title)
 		}
+		return append(append(out, "-e"), argv...), true
 	}
-	return argv
+	if t := os.Getenv("TERMINAL"); t != "" && util.Which(t) != "" {
+		return append([]string{t, "-e"}, argv...), true
+	}
+	for _, t := range terminals {
+		if util.Which(t.cmd[0]) == "" {
+			continue
+		}
+		out = slices.Clone(t.cmd)
+		if t.class != "" {
+			out = append(out, t.class+omarchy.WindowClass)
+		}
+		if t.title != "" && title != "" {
+			out = append(out, t.title+title)
+		}
+		return append(append(out, t.run...), argv...), true
+	}
+	return argv, false
+}
+
+func inTerminal(argv []string) []string {
+	out, _ := Terminal("", argv)
+	return out
 }
 
 // App launches an app from the list, with launch-sheet arguments, in cwd

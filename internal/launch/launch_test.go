@@ -73,3 +73,52 @@ func TestShellSplit(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// onPath puts only the named stand-in executables on PATH.
+func onPath(t *testing.T, bins ...string) {
+	dir := t.TempDir()
+	for _, b := range bins {
+		os.WriteFile(filepath.Join(dir, b), []byte("#!/bin/sh\n"), 0o755)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("TERMINAL", "")
+}
+
+func TestTerminalPrefersXdgTerminalExec(t *testing.T) {
+	onPath(t, "xdg-terminal-exec", "foot")
+	got, ok := launch.Terminal("topdown", []string{"topdown", "pick"})
+	want := []string{"xdg-terminal-exec", "--app-id=org.omarchy.agent", "--title=topdown", "-e", "topdown", "pick"}
+	if !ok || !slices.Equal(got, want) {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestTerminalUsesTERMINAL(t *testing.T) {
+	onPath(t, "myterm", "foot")
+	t.Setenv("TERMINAL", "myterm")
+	got, ok := launch.Terminal("topdown", []string{"x"})
+	if !ok || !slices.Equal(got, []string{"myterm", "-e", "x"}) {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestTerminalFallbacks(t *testing.T) {
+	for bin, want := range map[string][]string{
+		"foot":           {"foot", "--app-id=org.omarchy.agent", "--title=topdown", "x"},
+		"wezterm":        {"wezterm", "start", "--class=org.omarchy.agent", "--", "x"},
+		"gnome-terminal": {"gnome-terminal", "--class=org.omarchy.agent", "--title=topdown", "--", "x"},
+		"konsole":        {"konsole", "-e", "x"},
+	} {
+		onPath(t, bin)
+		if got, ok := launch.Terminal("topdown", []string{"x"}); !ok || !slices.Equal(got, want) {
+			t.Errorf("%s: got %q", bin, got)
+		}
+	}
+}
+
+func TestTerminalNoneFound(t *testing.T) {
+	onPath(t)
+	if got, ok := launch.Terminal("", []string{"x"}); ok || !slices.Equal(got, []string{"x"}) {
+		t.Fatalf("got %q %v", got, ok)
+	}
+}

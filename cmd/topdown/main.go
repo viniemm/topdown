@@ -129,13 +129,17 @@ func act(s launch.Spec, where launch.Where, title string) error {
 	return launch.ExecHere(s, title)
 }
 
-// openWindow runs the hub in a new terminal window with the agent window class.
+// openWindow runs the hub in a new terminal window with the agent window class
+// (see launch.Terminal for which terminal).
 func openWindow(args []string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	argv := append([]string{"xdg-terminal-exec", "--app-id=" + omarchy.WindowClass, "--title=topdown", "-e", self, "pick"}, args...)
+	argv, ok := launch.Terminal("topdown", append([]string{self, "pick"}, args...))
+	if !ok {
+		return fmt.Errorf("no terminal found: install xdg-terminal-exec or set $TERMINAL")
+	}
 	if util.Which("uwsm-app") != "" {
 		argv = append([]string{"uwsm-app", "--"}, argv...)
 	}
