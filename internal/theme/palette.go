@@ -23,7 +23,6 @@ import (
 type RGB [3]uint8
 
 type Palette struct {
-	Source                                                          string // "omarchy" or "terminal"
 	Fg, Bg, Accent, Red, Green, Yellow, Blue, Magenta, Cyan, Orange RGB
 }
 
@@ -84,7 +83,7 @@ func readOmarchy() *Palette {
 		}
 		return fg
 	}
-	p := &Palette{Source: "omarchy", Fg: fg, Bg: bg,
+	p := &Palette{Fg: fg, Bg: bg,
 		Red: c("red", 1), Green: c("green", 2), Yellow: c("yellow", 3), Blue: c("blue", 4), Magenta: c("magenta", 5), Cyan: c("cyan", 6)}
 	p.Accent, _ = pick("accent")
 	if _, ok := kv["accent"]; !ok {
@@ -167,7 +166,7 @@ func queryTerminal(timeout time.Duration) *Palette {
 		}
 		return *fg
 	}
-	return &Palette{Source: "terminal", Fg: *fg, Bg: *bg, Accent: a(4), Red: a(1), Green: a(2), Yellow: a(3),
+	return &Palette{Fg: *fg, Bg: *bg, Accent: a(4), Red: a(1), Green: a(2), Yellow: a(3),
 		Blue: a(4), Magenta: a(5), Cyan: a(6), Orange: Mix(a(1), a(3), 0.5)}
 }
 

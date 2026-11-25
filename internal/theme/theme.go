@@ -286,18 +286,11 @@ func FgColor() RGB { return pal.Fg }
 // RoleColor is a role's true colour (only meaningful when Rich).
 func RoleColor(r Role) RGB { return roles[r] }
 
-// SelectedColor is the selection background (only meaningful when Rich).
-func SelectedColor() RGB { return *selectedBg }
-
 // LogoStops are the logo's gradient stops: magenta, the accent, cyan (omp uses pink → blue).
 func LogoStops() []RGB { return []RGB{pal.Magenta, pal.Accent, pal.Cyan} }
 
 // Green is the success colour (open-conversation markers pulse in it).
 func Green() RGB { return pal.Green }
-
-// Colors is the palette itself, for drawings that want its hues (only
-// meaningful when Rich).
-func Colors() Palette { return *pal }
 
 // Grad is the colour at t (0..1) along evenly spaced stops.
 func Grad(stops []RGB, t float64) RGB {

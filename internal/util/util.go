@@ -34,13 +34,6 @@ func StateHome() string  { return xdg("STATE", ".local/state") }
 func CacheHome() string  { return xdg("CACHE", ".cache") }
 func DataHome() string   { return xdg("DATA", ".local/share") }
 
-func RuntimeDir() string {
-	if v := os.Getenv("XDG_RUNTIME_DIR"); v != "" {
-		return v
-	}
-	return os.TempDir()
-}
-
 func ConfigDir() string { return filepath.Join(ConfigHome(), "topdown") }
 func StateDir() string  { return filepath.Join(StateHome(), "topdown") }
 func CacheDir() string  { return filepath.Join(CacheHome(), "topdown") }
