@@ -19,7 +19,7 @@ import (
 )
 
 // viewCache is the last full frame. While only the header band moves (the
-// logo's shimmer, the landscape) and nothing else has happened, a frame
+// logo's shimmer) and nothing else has happened, a frame
 // repaints just the band's rows over it: the list, sidebar and footer cost
 // far more to draw than the band.
 type viewCache struct {
@@ -83,11 +83,9 @@ func (h *Hub) render() string {
 	return content
 }
 
-// header is the logo band, when the window has room for it: the logo, the
-// stats on the right, and the landscape in the space between (smaller as the
-// window narrows, gone when it has no room). The logo is never cut.
+// header is the logo band, when the window has room for it: the logo, and
+// the stats on the right. The logo is never cut.
 func (h *Hub) header() func(w int) []string {
-	h.anim.scenery = false
 	if h.height < 22 || h.width < 50 {
 		return nil
 	}
@@ -113,28 +111,10 @@ func (h *Hub) header() func(w int) []string {
 		if d := config.Default(); d != "" {
 			stats[1] = dim("default ") + theme.Agent(d, d)
 		}
-		left, right := 0, 0 // the logo's columns, and the stats' (with their margin)
-		for i := range lines {
-			left = max(left, 1+width(lines[i]))
-		}
-		shown := make([]bool, len(lines))
-		for i := range lines {
-			// Stats only where they fit beside the logo.
-			if i < len(stats) && width(lines[i])+width(stats[i])+4 <= w {
-				shown[i] = true
-				right = max(right, width(stats[i])+1)
-			}
-		}
-		var land []string
-		if sw := w - left - right - 2*sceneGap; len(lines) == sceneRows {
-			land = h.scenery(sw, f.reveal)
-		}
 		for i := range lines {
 			l := " " + lines[i]
-			if land != nil {
-				l = pad(l, left+sceneGap) + land[i]
-			}
-			if shown[i] {
+			// Stats only where they fit beside the logo.
+			if i < len(stats) && width(lines[i])+width(stats[i])+4 <= w {
 				lines[i] = spread(l, stats[i]+" ", w)
 			} else {
 				lines[i] = fit(l, w)

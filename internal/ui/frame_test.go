@@ -48,10 +48,9 @@ func TestLogoRowsLineUp(t *testing.T) {
 	}
 }
 
-// The header band with its landscape is exactly the band's width at every
-// width and in every scene, keeps the logo whole, and drops the landscape
-// only when there is no room for it.
-func TestHeaderSceneryWidth(t *testing.T) {
+// The header band is exactly the band's width at every width and keeps the
+// logo whole.
+func TestHeaderWidth(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for _, v := range []string{"XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"} {
 		t.Setenv(v, "")
@@ -64,55 +63,32 @@ func TestHeaderSceneryWidth(t *testing.T) {
 		} else {
 			theme.Init(nil)
 		}
-		for _, name := range sceneNames {
-			t.Setenv("TOPDOWN_SCENE", name)
-			for _, W := range []int{50, 64, 70, 79, 80, 90, 100, 120, 140, 200, 320} {
-				h := &Hub{width: W, height: 30, live: map[string]int{"x": 1}, opts: Options{Version: "0.9.0"},
-					frame: frame{title: "topdown", minW: 16, maxW: 26}}
-				h.anim.init(time.Now().Add(-3 * time.Second))
-				h.anim.now = time.Now()
-				w := W - 4
-				band := h.header()(w)
-				want := logo(h.logoFrame(), "  v0.9.0")
-				if w < logoWidth+30 {
-					want = compactLogo(h.logoFrame())
+		for _, W := range []int{50, 64, 70, 79, 80, 90, 100, 120, 140, 200, 320} {
+			h := &Hub{width: W, height: 30, live: map[string]int{"x": 1}, opts: Options{Version: "0.9.0"},
+				frame: frame{title: "topdown", minW: 16, maxW: 26}}
+			h.anim.init(time.Now().Add(-3 * time.Second))
+			h.anim.now = time.Now()
+			w := W - 4
+			band := h.header()(w)
+			want := logo(h.logoFrame(), "  v0.9.0")
+			if w < logoWidth+30 {
+				want = compactLogo(h.logoFrame())
+			}
+			for i, l := range band {
+				if got := ansi.StringWidth(l); got != w {
+					t.Fatalf("rich=%v W=%d: band line %d is %d wide, want %d: %q", rich, W, i, got, w, ansi.Strip(l))
 				}
-				hasScene := false
-				for i, l := range band {
-					if got := ansi.StringWidth(l); got != w {
-						t.Fatalf("rich=%v %s W=%d: band line %d is %d wide, want %d: %q", rich, name, W, i, got, w, ansi.Strip(l))
-					}
-					if logoRow := ansi.Strip(want[i]); !strings.HasPrefix(ansi.Strip(l), " "+logoRow) {
-						t.Fatalf("rich=%v %s W=%d: logo row %d cut: %q", rich, name, W, i, ansi.Strip(l))
-					}
-					if mid := []rune(ansi.Strip(l)); len(mid) > logoWidth+40 && strings.TrimSpace(string(mid[logoWidth+4:len(mid)-30])) != "" {
-						hasScene = true
-					}
+				if logoRow := ansi.Strip(want[i]); !strings.HasPrefix(ansi.Strip(l), " "+logoRow) {
+					t.Fatalf("rich=%v W=%d: logo row %d cut: %q", rich, W, i, ansi.Strip(l))
 				}
-				if W >= 140 && !hasScene {
-					t.Fatalf("rich=%v %s W=%d: no landscape in %q", rich, name, W, band)
-				}
-				// And the whole frame stays rectangular.
-				for i, l := range strings.Split(h.frame.render(W, 30, nil, func(int, int) []string { return nil },
-					func(int, int) []string { return nil }, "", h.header()), "\n") {
-					if got := ansi.StringWidth(l); got != max(40, W) {
-						t.Fatalf("rich=%v %s W=%d: frame line %d is %d wide", rich, name, W, i, got)
-					}
+			}
+			// And the whole frame stays rectangular.
+			for i, l := range strings.Split(h.frame.render(W, 30, nil, func(int, int) []string { return nil },
+				func(int, int) []string { return nil }, "", h.header()), "\n") {
+				if got := ansi.StringWidth(l); got != max(40, W) {
+					t.Fatalf("rich=%v W=%d: frame line %d is %d wide", rich, W, i, got)
 				}
 			}
 		}
-	}
-}
-
-func TestSceneryReducedMotionIsStatic(t *testing.T) {
-	t.Setenv("TOPDOWN_REDUCED_MOTION", "1")
-	theme.Init(&theme.Palette{Fg: theme.RGB{220, 220, 220}, Bg: theme.RGB{20, 20, 20}, Blue: theme.RGB{97, 175, 239}})
-	t.Setenv("TOPDOWN_SCENE", "night")
-	h := &Hub{}
-	h.anim.init(time.Now())
-	a := strings.Join(h.scenery(60, 1), "\n")
-	h.anim.now = h.anim.now.Add(5 * time.Second)
-	if b := strings.Join(h.scenery(60, 1), "\n"); a != b || h.anim.scenery {
-		t.Fatalf("the landscape moved with reduced motion")
 	}
 }

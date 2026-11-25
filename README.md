@@ -114,18 +114,10 @@ The logo sweeps in when the hub opens and a shimmer crosses it every few
 seconds; the selection bar fades in as you move; open conversations' ●
 markers breathe; a spinner shows while usage refreshes in the background.
 
-Between the logo and the stats, a small landscape fills whatever room the
-window leaves (and goes when there is none): ridges, hills, a lake, and a
-sun or moon. The scene follows the time of day (night, dawn, day, dusk;
-`TOPDOWN_SCENE=night` forces one) and the terrain changes daily. Stars
-twinkle, clouds drift and the water shimmers at 4 frames a second. It is drawn
-procedurally in the theme's colours; no third-party art is used.
-
 The ticker only runs while something moves, and frames where only the header
-moves repaint just the header. That comes to about 1–2% of a core with the
-landscape showing, depending on the window's width. Turn motion off with
-`"animations": false` in `theme.json`, or `TOPDOWN_REDUCED_MOTION=1`; the
-landscape then stays still. Motion is also off without true colour.
+moves repaint just the header. Turn motion off with `"animations": false` in
+`theme.json`, or `TOPDOWN_REDUCED_MOTION=1`. Motion is also off without true
+colour.
 
 ## Development
 

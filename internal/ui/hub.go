@@ -125,7 +125,6 @@ type Hub struct {
 	frame      frame
 	anim       animState
 	refreshing map[string]bool // agent ids whose usage is being refreshed
-	scene      *scene          // the header's landscape, built for its width
 	cache      viewCache
 	// an agent's page: the folders its New rows can start in (zoxide first)
 	cands      []folders.Folder
@@ -399,8 +398,6 @@ func (h *Hub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h.width, h.height = msg.Width, msg.Height
-		// The landscape may have come into view; the next frame says if not.
-		h.anim.scenery = theme.Animated()
 		return h, h.touch()
 	case tickMsg:
 		return h, h.onTick(msg)
