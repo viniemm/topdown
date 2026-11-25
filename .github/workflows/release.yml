@@ -65,12 +65,12 @@ jobs:
           go test ./...
           mkdir -p dist
           for arch in amd64 arm64; do
-            CGO_ENABLED=0 GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/topdown-$arch" ./cmd/topdown
+            CGO_ENABLED=0 GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$version" -o dist/topdown ./cmd/topdown
             for fmt in deb rpm; do
-              VERSION=$version ARCH=$arch BIN=dist/topdown-$arch nfpm pkg -f packaging/nfpm.yaml -p $fmt -t dist/
+              VERSION=$version ARCH=$arch nfpm pkg -f packaging/nfpm.yaml -p $fmt -t dist/
             done
           done
-          rm dist/topdown-amd64 dist/topdown-arm64
+          rm dist/topdown
           ls -l dist
       - uses: actions/upload-artifact@v4
         with: {name: debrpm, path: dist/}

@@ -1,6 +1,7 @@
-# .deb and .rpm packages, built by nfpm (https://nfpm.goreleaser.com) from a
-# binary already built for $GOARCH:
-#   VERSION=0.9.3 ARCH=amd64 BIN=dist/topdown-amd64 nfpm pkg -f packaging/nfpm.yaml -p deb -t dist/
+# .deb and .rpm packages, built by nfpm (https://nfpm.goreleaser.com) from the
+# binary at dist/topdown, already built for $ARCH (nfpm doesn't expand
+# variables in file paths, so the path is fixed):
+#   VERSION=0.9.4 ARCH=amd64 nfpm pkg -f packaging/nfpm.yaml -p deb -t dist/
 # The release workflow does this for amd64 and arm64.
 name: topdown
 arch: ${ARCH}
@@ -19,7 +20,7 @@ homepage: https://github.com/viniemm/topdown
 license: MIT
 
 contents:
-  - src: ${BIN}
+  - src: dist/topdown
     dst: /usr/bin/topdown
     file_info: {mode: 0755}
   - src: pkgbuild/topdown.desktop
