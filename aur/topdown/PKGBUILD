@@ -1,0 +1,49 @@
+# Maintainer: Vinayak Mathur <vinayakrulez@gmail.com>
+
+pkgname=topdown
+pkgver=0.9.3
+pkgrel=1
+pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
+arch=('x86_64' 'aarch64')
+url='https://github.com/viniemm/topdown'
+license=('MIT')
+depends=('bash' 'glibc' 'util-linux')   # the Omarchy shim is bash; setsid detaches new windows
+makedepends=('go')
+options=('!debug')   # stripped at link time (-s -w)
+optdepends=('omarchy: launch through omarchy-agent, plan-usage meters, theme colours'
+            'hyprland: switch to an already-open conversation'
+            'xdg-terminal-exec: open agents in a new terminal window'
+            'glib2: trash files that live on another filesystem'
+            'libnotify: show errors from a keybinding as a notification'
+            'zoxide: rank folder suggestions by frecency')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')   # set by updpkgsums once the v$pkgver tag is pushed
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  go mod download -modcacherw
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  export CGO_ENABLED=0
+  export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
+  go build -ldflags "-s -w -X main.version=$pkgver" -o topdown ./cmd/topdown
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  go test ./cmd/... ./internal/...
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 topdown "$pkgdir/usr/bin/topdown"
+  install -Dm644 pkgbuild/topdown.desktop "$pkgdir/usr/share/applications/topdown.desktop"
+  install -Dm644 pkgbuild/topdown.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/topdown.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

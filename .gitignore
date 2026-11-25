@@ -3,3 +3,7 @@ pkgbuild/src/
 pkgbuild/*.pkg.tar.*
 dist/
 .testhome/
+aur/*/src/
+aur/*/pkg/
+aur/*/*.pkg.tar.*
+aur/*/*.tar.gz
