@@ -8,23 +8,8 @@ and Lip Gloss. The look comes from studying omp's model picker
 sidebar of scopes, a searchable list, a detail panel and a key bar.
 
 ```
-╭─────────────────────────────────────────────────────────────────────────────╮
-│ ▀▀▀▀▀▀▀▀▀    █               █                            6 apps · ● 1 open │
-│ ▀███████▀   ▀█▀ ▄▀▀▄ █▀▀▄ ▄▀▀█ ▄▀▀▄ █ █ █ █▀▀▄                 default claude │
-│  ▀█████▀     █▄ ▀▄▄▀ █▄▄▀ ▀▄▄█ ▀▄▄▀ ▀▄▀▄▀ █  █                                │
-│    ▀█▀               █      v0.8.0                   agents, from the top down │
-├──────────────────┬──────────────────────────────────────────────────────────┤
-│   ▦ Apps       6 │  Recent conversations                                    │
-│   ◷ Recent       │  ›                                                       │
-│ ──────────────── │  ● 17:32      claude  topdown      Port the launcher     │
-│   ◆ claude   22% │    Wed 18:39  hermes  mintern      Lightest Linux distro │
-│   ◆ hermes       │    Nov 12     pi      xfin         Refactor auth module  │
-│                  │ ──────────────────────────────────────────────────────── │
-│                  │  Port the launcher                                       │
-│                  │  claude  ~/Work/topdown  17:32 · 3s ago  ● open          │
-├──────────────────┴──────────────────────────────────────────────────────────┤
-│ ⏎ open · Alt-⏎ window · ^O options · Tab apps · ^E rename · ^X delete · esc │
-╰─────────────────────────────────────────────────────────────────────────────╯
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/2485ac08-27f4-4441-af4f-93aa7933e843" />
+
 ```
 
 Pick something and the hub's own terminal becomes that agent; no second window.
