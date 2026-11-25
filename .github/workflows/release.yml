@@ -1,0 +1,55 @@
+# On a v* tag: build aur/topdown/PKGBUILD in a fresh Arch container (only
+# base-devel plus what the PKGBUILD declares, so a missing dependency fails
+# here) and publish the package on the GitHub release, for
+#   sudo pacman -U https://github.com/viniemm/topdown/releases/download/vX.Y.Z/topdown-X.Y.Z-1-x86_64.pkg.tar.zst
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install build tools
+        run: pacman -Syu --noconfirm --needed git github-cli namcap
+
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches pkgver
+        run: |
+          pkgver=$(sed -n 's/^pkgver=//p' aur/topdown/PKGBUILD)
+          [ "v$pkgver" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME but pkgver=$pkgver"; exit 1; }
+
+      - name: Build the package
+        run: |
+          # makepkg refuses to run as root; -s installs the PKGBUILD's own dependencies.
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          cp -r aur/topdown /home/builder/topdown && chown -R builder /home/builder/topdown
+          cd /home/builder/topdown
+          sudo -u builder makepkg -s --noconfirm
+          namcap PKGBUILD *.pkg.tar.zst
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          pkg=$(ls /home/builder/topdown/*.pkg.tar.zst)
+          sha256sum "$pkg" | sed 's|/home/builder/topdown/||' > "$pkg.sha256"
+          notes="Arch / Omarchy:
+
+          \`\`\`
+          sudo pacman -U https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$(basename "$pkg")
+          \`\`\`
+
+          Other distros: \`git clone\` and \`bin/install\` (see the README)."
+          gh release create "$GITHUB_REF_NAME" "$pkg" "$pkg.sha256" \
+            --repo "$GITHUB_REPOSITORY" --title "topdown ${GITHUB_REF_NAME#v}" \
+            --notes "$notes" --generate-notes

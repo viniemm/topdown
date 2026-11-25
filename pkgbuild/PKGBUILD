@@ -5,7 +5,7 @@ pkgdesc='One TUI to launch, resume and manage coding agents and their conversati
 arch=('x86_64' 'aarch64')
 url='https://github.com/viniemm/topdown'
 license=('MIT')
-depends=('bash' 'util-linux')   # the Omarchy shim is bash; setsid detaches new windows
+depends=('bash' 'hicolor-icon-theme' 'util-linux')   # the Omarchy shim is bash; setsid detaches new windows
 optdepends=('omarchy: launch through omarchy-agent, plan-usage meters, theme colours'
             'hyprland: switch to an already-open conversation'
             'xdg-terminal-exec: open agents in a new terminal window'

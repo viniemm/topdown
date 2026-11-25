@@ -9,6 +9,7 @@ pkgbase = topdown
 	makedepends = go
 	depends = bash
 	depends = glibc
+	depends = hicolor-icon-theme
 	depends = util-linux
 	optdepends = omarchy: launch through omarchy-agent, plan-usage meters, theme colours
 	optdepends = hyprland: switch to an already-open conversation

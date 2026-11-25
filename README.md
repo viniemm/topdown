@@ -90,22 +90,33 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
 
 ## Install
 
+**Arch (Omarchy or not):** install the package from the
+[latest release](https://github.com/viniemm/topdown/releases/latest):
+
+    sudo pacman -U https://github.com/viniemm/topdown/releases/download/v0.9.3/topdown-0.9.3-1-x86_64.pkg.tar.zst
+
+pacman owns the files: run the newer release's line to upgrade, and
+`sudo pacman -R topdown` to remove it. (An AUR package is coming; its
+PKGBUILD is in `aur/topdown`.)
+
+**From source, any distro:**
+
     git clone https://github.com/viniemm/topdown && cd topdown
     bin/install
 
-**Arch (Omarchy or not):** `bin/install` builds and installs a pacman package
-(`makepkg -si`): `/usr/bin/topdown`, one static binary, plus the launcher
+On Arch, `bin/install` builds and installs a pacman package from your
+checkout (`makepkg -si`): `/usr/bin/topdown`, one binary, plus the launcher
 entry. It replaces the old `omarchy-agent-launcher` package (that name stays
 as a symlink). Run it again to upgrade; `pacman -R topdown` removes it.
 
-**Fedora, Debian, Ubuntu and the rest:** `bin/install` builds with Go and
+On **Fedora, Debian, Ubuntu and the rest**, `bin/install` builds with Go and
 installs for your user into `~/.local` (`bin/topdown`, the launcher entry and
 icon); no root needed. Building needs Go and git:
 
     sudo dnf install golang git          # Fedora
     sudo apt install golang-go git       # Debian, Ubuntu
 
-topdown wants the newest Go (see `go.mod`); a distro Go that's older but 1.21
+Building needs Go 1.27 or later; a distro Go that's older but 1.21
 or later downloads the right toolchain by itself on the first build.
 
     bin/install --system                 # for everyone, into /usr/local (asks for sudo)
