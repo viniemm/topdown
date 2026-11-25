@@ -155,21 +155,9 @@ func (h *Hub) Init() tea.Cmd { return h.schedule() }
 
 // ---------- data ----------
 
-func (h *Hub) sessionAgents() []string {
-	seen := map[string]bool{}
-	var ids []string
-	for _, a := range h.apps {
-		if ad := agent.Get(a.Agent); ad != nil && ad.Sessions != nil && !seen[a.Agent] {
-			seen[a.Agent] = true
-			ids = append(ids, a.Agent)
-		}
-	}
-	return ids
-}
-
 func (h *Hub) entries() []entry {
 	es := []entry{{id: "apps", kind: "apps", label: "Apps", annotation: fmt.Sprint(len(h.apps))}, {id: "recent", kind: "recent", label: "Recent"}}
-	agents := h.sessionAgents()
+	agents := config.SessionAgents(h.apps)
 	if len(agents) > 0 {
 		es = append(es, entry{id: "sep", kind: "separator"})
 	}
@@ -207,7 +195,7 @@ func (h *Hub) reload(keepCursor bool) {
 		prev = &p
 	}
 	h.rows = nil
-	h.live = agent.Live(h.sessionAgents()...) // for ● markers and the header's count
+	h.live = agent.Live(config.SessionAgents(h.apps)...) // for ● markers and the header's count
 	if h.scope == "apps" {
 		idx := make([]int, len(h.apps))
 		for i := range idx {
@@ -223,7 +211,7 @@ func (h *Hub) reload(keepCursor bool) {
 			h.rows = append(h.rows, row{kind: rowAdd})
 		}
 	} else {
-		agents := h.sessionAgents()
+		agents := config.SessionAgents(h.apps)
 		if strings.HasPrefix(h.scope, "agent:") {
 			agents = []string{strings.TrimPrefix(h.scope, "agent:")}
 		}

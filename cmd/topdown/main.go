@@ -13,11 +13,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/viniemm/topdown/internal/agent"
 	"github.com/viniemm/topdown/internal/catalog"
 	"github.com/viniemm/topdown/internal/config"
 	"github.com/viniemm/topdown/internal/hypr"
@@ -47,7 +47,7 @@ func run(args []string) error {
 	}
 	switch cmd {
 	case "pick":
-		return pick(contains(args, "--choose-default"))
+		return pick(slices.Contains(args, "--choose-default"))
 	case "open":
 		return openWindow(args)
 	case "default":
@@ -62,7 +62,7 @@ func run(args []string) error {
 		}
 		for _, a := range config.LoadApps() {
 			if a.ID == args[0] {
-				return here(launch.App(a, launch.Here, nil, ""), a.Label)
+				return launch.ExecHere(launch.App(a, launch.Here, nil, ""), a.Label)
 			}
 		}
 		return fmt.Errorf("no app named %q", args[0])
@@ -74,15 +74,11 @@ func run(args []string) error {
 		if !ok {
 			return errors.New("session not found")
 		}
-		return here(launch.Resume(s, launch.Here, nil), s.Title)
+		return launch.ExecHere(launch.Resume(s, launch.Here, nil), s.Title)
 	case "list":
 		agents := args
 		if len(agents) == 0 {
-			for _, a := range config.LoadApps() {
-				if ad := agent.Get(a.Agent); ad != nil && ad.Sessions != nil && !contains(agents, a.Agent) {
-					agents = append(agents, a.Agent)
-				}
-			}
+			agents = config.SessionAgents(config.LoadApps())
 		}
 		for _, s := range catalog.Recent(agents, 50).Sessions {
 			fmt.Println(strings.Join([]string{util.Stamp(s.When), s.Agent, s.ID, s.Cwd, s.Title}, "\t"))
@@ -100,15 +96,6 @@ func run(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown command: %s\n%s", cmd, usage)
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 func pick(chooseDefault bool) error {
@@ -139,11 +126,6 @@ func act(s launch.Spec, where launch.Where, title string) error {
 	if where == launch.Window {
 		return launch.ExecWindow(s)
 	}
-	return here(s, title)
-}
-
-// here replaces this process with the agent: the terminal becomes it.
-func here(s launch.Spec, title string) error {
 	return launch.ExecHere(s, title)
 }
 

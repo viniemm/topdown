@@ -110,15 +110,11 @@ func Resume(s agent.Session, where Where, extra []string) Spec {
 
 // Default launches the default agent.
 func Default(agentID string, where Where) Spec {
-	var app *config.App
-	if a, ok := config.AppFor(config.LoadApps(), agentID); ok {
-		app = &a
-	}
-	return agentSpec(agentID, config.AgentArgs(app, agentID), "", where)
+	return agentSpec(agentID, config.AgentArgs(nil, agentID), "", where)
 }
 
-// EnvArgs are `env` arguments for a spec: [-C dir] [K=V…] argv…
-func EnvArgs(s Spec) []string {
+// envArgs are `env` arguments for a spec: [-C dir] [K=V…] argv…
+func envArgs(s Spec) []string {
 	var out []string
 	if s.Cwd != "" {
 		out = append(out, "-C", s.Cwd)
@@ -181,7 +177,7 @@ func ExecWindow(s Spec) error {
 		return err
 	}
 	defer log.Close()
-	cmd := exec.Command("setsid", append([]string{"-f", "env"}, EnvArgs(s)...)...)
+	cmd := exec.Command("setsid", append([]string{"-f", "env"}, envArgs(s)...)...)
 	cmd.Stdout, cmd.Stderr = log, log
 	return cmd.Run()
 }

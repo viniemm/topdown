@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/viniemm/topdown/internal/agent"
@@ -99,6 +100,17 @@ func AppFor(apps []App, agentID string) (App, bool) {
 		}
 	}
 	return App{}, false
+}
+
+// SessionAgents are the agents in the list that keep conversations topdown can read, once each.
+func SessionAgents(apps []App) []string {
+	var ids []string
+	for _, a := range apps {
+		if ad := agent.Get(a.Agent); ad != nil && ad.Sessions != nil && !slices.Contains(ids, a.Agent) {
+			ids = append(ids, a.Agent)
+		}
+	}
+	return ids
 }
 
 // AgentArgs: an app's own "args", else the adapter's defaults.
