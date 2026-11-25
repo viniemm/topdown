@@ -93,7 +93,7 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
 **Arch (Omarchy or not):** install the package from the
 [latest release](https://github.com/viniemm/topdown/releases/latest):
 
-    sudo pacman -U https://github.com/viniemm/topdown/releases/download/v0.9.3/topdown-0.9.3-1-x86_64.pkg.tar.zst
+    sudo pacman -U https://github.com/viniemm/topdown/releases/download/v0.9.4/topdown-0.9.4-1-x86_64.pkg.tar.zst
 
 pacman owns the files: run the newer release's line to upgrade, and
 `sudo pacman -R topdown` to remove it. (An AUR package is coming; its
@@ -101,12 +101,12 @@ PKGBUILD is in `aur/topdown`.)
 
 **Debian, Ubuntu:**
 
-    curl -LO https://github.com/viniemm/topdown/releases/download/v0.9.3/topdown_0.9.3-1_amd64.deb
-    sudo apt install ./topdown_0.9.3-1_amd64.deb
+    curl -LO https://github.com/viniemm/topdown/releases/download/v0.9.4/topdown_0.9.4-1_amd64.deb
+    sudo apt install ./topdown_0.9.4-1_amd64.deb
 
 **Fedora:**
 
-    sudo dnf install https://github.com/viniemm/topdown/releases/download/v0.9.3/topdown-0.9.3-1.x86_64.rpm
+    sudo dnf install https://github.com/viniemm/topdown/releases/download/v0.9.4/topdown-0.9.4-1.x86_64.rpm
 
 Each release also has arm64 / aarch64 builds and a `.sha256` for every file.
 Remove with `sudo apt remove topdown` or `sudo dnf remove topdown`.

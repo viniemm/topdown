@@ -1,5 +1,5 @@
 pkgname=topdown
-pkgver=0.9.3
+pkgver=0.9.4
 pkgrel=1
 pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
 arch=('x86_64' 'aarch64')
