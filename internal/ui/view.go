@@ -295,7 +295,7 @@ func (h *Hub) renderRow(r row, aw, lw int) string {
 	}
 	proj := util.Project(s.Cwd)
 	return " " + live + " " + theme.Age(s.When, pad(util.Stamp(s.When), 11)) + theme.Agent(s.Agent, pad(s.Agent, aw)) +
-		"  " + theme.Project(proj, pad(cut(proj, 12), 12)) + " " + util.Oneline(s.Title, 200)
+		"  " + theme.Project(proj, pad(util.Clip(proj, 12), 12)) + " " + util.Oneline(s.Title, 200)
 }
 
 func (h *Hub) renderDetail(w int) []string {

@@ -51,7 +51,7 @@ func ParseClaude(file string) Parsed {
 			}
 		case "user":
 			if t := util.TextOf(d.Message.Content); !d.IsMeta && util.IsUserText(t) {
-				prompts = append(prompts, clip(strings.TrimSpace(t), 600))
+				prompts = append(prompts, util.Clip(strings.TrimSpace(t), 600))
 			}
 		}
 		return true
@@ -64,14 +64,6 @@ func ParseClaude(file string) Parsed {
 		title = prompts[0]
 	}
 	return Parsed{Title: title, Cwd: cwd, Prompts: prompts}
-}
-
-func clip(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n])
-	}
-	return s
 }
 
 type claudeStore struct{ files fileStore }
@@ -102,15 +94,10 @@ func (c claudeStore) Delete(s Session) error {
 		return errors.New("that conversation is already gone")
 	}
 	files := []string{file}
-	if side := strings.TrimSuffix(file, ".jsonl"); isDir(side) {
+	if side := strings.TrimSuffix(file, ".jsonl"); util.IsDir(side) {
 		files = append(files, side)
 	}
 	return Trash(files...)
-}
-
-func isDir(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
 }
 
 // ClaudeLive lists running sessions: Claude Code records each in ~/.claude/sessions/<pid>.json.

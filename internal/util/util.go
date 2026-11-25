@@ -146,6 +146,23 @@ func ShortPath(p string) string {
 	return p
 }
 
+// ExpandHome resolves a leading "~" or "~/" to $HOME; anything else is unchanged.
+func ExpandHome(p string) string {
+	switch {
+	case p == "~":
+		return Home()
+	case strings.HasPrefix(p, "~/"):
+		return filepath.Join(Home(), p[2:])
+	}
+	return p
+}
+
+// IsDir reports whether p is a directory.
+func IsDir(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
+}
+
 // Project is the last path component of a working directory ("~" for $HOME).
 func Project(p string) string {
 	s := strings.TrimRight(p, "/")
@@ -166,6 +183,15 @@ func Oneline(s string, n int) string {
 	}
 	r := []rune(t)
 	return string(r[:max(0, n-1)]) + "…"
+}
+
+// Clip is s limited to n runes (no ellipsis).
+func Clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }
 
 // TextOf returns a message's text: a string, or a list of {type: "text", text} parts.

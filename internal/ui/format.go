@@ -65,7 +65,7 @@ func usageLines(u *omarchy.Usage, w int) []string {
 				left = "reset due"
 			}
 		}
-		out = append(out, fmt.Sprintf("%s %s %3.0f%%  %s", pad(cut(label, 10), 10), bar(l.Percent, bw), l.Percent*100, dim(left)))
+		out = append(out, fmt.Sprintf("%s %s %3.0f%%  %s", pad(util.Clip(label, 10), 10), bar(l.Percent, bw), l.Percent*100, dim(left)))
 	}
 	if b := u.Balance; b != nil {
 		spent := 0.0

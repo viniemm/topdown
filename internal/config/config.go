@@ -186,21 +186,10 @@ func LoadSettings() Settings {
 // Workdir is the folder new conversations start in.
 func Workdir() string {
 	if w := LoadSettings().Workdir; w != "" {
-		switch {
-		case w == "~":
-			return util.Home()
-		case strings.HasPrefix(w, "~/"):
-			return filepath.Join(util.Home(), w[2:])
-		}
-		return w
+		return util.ExpandHome(w)
 	}
-	if w := filepath.Join(util.Home(), "Work"); isDir(w) {
+	if w := filepath.Join(util.Home(), "Work"); util.IsDir(w) {
 		return w
 	}
 	return util.Home()
-}
-
-func isDir(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
 }

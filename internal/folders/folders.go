@@ -40,7 +40,7 @@ func Candidates(convs map[string]int) []Folder {
 		get(z.Path).Rank = z.Rank
 	}
 	for p, n := range convs {
-		if p != "" && isDir(p) {
+		if p != "" && util.IsDir(p) {
 			get(p).Convs = n
 		}
 	}
@@ -94,12 +94,7 @@ func IsPath(q string) bool {
 
 // Expand resolves ~ and relative paths (against base).
 func Expand(q, base string) string {
-	switch {
-	case q == "~":
-		return util.Home()
-	case strings.HasPrefix(q, "~/"):
-		return filepath.Join(util.Home(), q[2:])
-	case !filepath.IsAbs(q):
+	if q = util.ExpandHome(q); !filepath.IsAbs(q) {
 		return filepath.Join(base, q)
 	}
 	return filepath.Clean(q)
@@ -142,11 +137,3 @@ func Match(cands []Folder, q, base string) []Folder {
 	sort.SliceStable(res, func(i, j int) bool { return res[i].Rank+float64(res[i].Convs) > res[j].Rank+float64(res[j].Convs) })
 	return res
 }
-
-func isDir(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
-}
-
-// Exists reports whether p is a directory.
-func Exists(p string) bool { return isDir(p) }

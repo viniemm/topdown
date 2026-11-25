@@ -295,13 +295,13 @@ func (h *Hub) folderChoices(i int, query string) []row {
 		return out
 	}
 	// A typed path that's already a folder comes first, then what it completes to.
-	if p := folders.Expand(query, work); folders.IsPath(query) && folders.Exists(p) {
+	if p := folders.Expand(query, work); folders.IsPath(query) && util.IsDir(p) {
 		add(h.knownFolder(p))
 	}
 	for _, f := range folders.Match(h.cands, query, work) {
 		add(f)
 	}
-	if p := folders.Expand(query, work); !folders.Exists(p) && validName(query) {
+	if p := folders.Expand(query, work); !util.IsDir(p) && validName(query) {
 		out = append(out, row{kind: rowNew, app: i, dir: p, create: true})
 	}
 	return out

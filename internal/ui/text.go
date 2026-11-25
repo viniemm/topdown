@@ -50,11 +50,3 @@ func pad(s string, n int) string {
 	return s
 }
 
-// cut is s limited to n runes (no ellipsis), for fixed-width columns.
-func cut(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n])
-	}
-	return s
-}

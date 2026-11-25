@@ -45,7 +45,7 @@ func ParsePi(file string) Parsed {
 			cwd = d.Cwd
 		case "message":
 			if t := util.TextOf(d.Message.Content); d.Message.Role == "user" && len(prompts) < 5 && util.IsUserText(t) {
-				prompts = append(prompts, clip(strings.TrimSpace(t), 600))
+				prompts = append(prompts, util.Clip(strings.TrimSpace(t), 600))
 			}
 		}
 		return true

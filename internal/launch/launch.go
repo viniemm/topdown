@@ -72,11 +72,6 @@ func inTerminal(argv []string) []string {
 	return argv
 }
 
-func isDir(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
-}
-
 // App launches an app from the list, with launch-sheet arguments, in cwd
 // (empty: where topdown runs, or ~/Work from $HOME under Omarchy).
 func App(app config.App, where Where, extra []string, cwd string) Spec {
@@ -106,7 +101,7 @@ func Resume(s agent.Session, where Where, extra []string) Spec {
 		resume = a.Sessions.ResumeArgs(s.ID)
 	}
 	cwd := ""
-	if isDir(s.Cwd) {
+	if util.IsDir(s.Cwd) {
 		cwd = s.Cwd
 	}
 	args := append(append(config.AgentArgs(nil, s.Agent), extra...), resume...)
