@@ -1,7 +1,75 @@
 #!/bin/bash
-# Build the package from this checkout and install it, so the app lands in the
-# launcher (Super+Space) and topdown is on PATH.
+# Build topdown from this checkout and install it, so `topdown` is on PATH and
+# the app shows up in the launcher.
+#
+#   bin/install                 Arch: build and install the package (makepkg)
+#                               elsewhere: install for this user, into ~/.local
+#   bin/install --system        elsewhere: install for everyone, into /usr/local (sudo)
+#   bin/install --uninstall     remove what the user install put there (add --system for /usr/local)
+#
+# PREFIX and DESTDIR override where files go (PREFIX=/opt/topdown, DESTDIR for packagers).
 set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-cd "$ROOT/pkgbuild"
-exec makepkg -fsi "$@"
+
+system= uninstall= rest=()
+for a in "$@"; do
+  case $a in
+    --system) system=1 ;;
+    --uninstall) uninstall=1 ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) rest+=("$a") ;;   # passed on to makepkg
+  esac
+done
+
+# Arch (Omarchy or not): a real package, so pacman owns and upgrades the files.
+if [[ -z $system && -z $uninstall && -z ${PREFIX:-} ]] && command -v makepkg >/dev/null && command -v pacman >/dev/null; then
+  cd "$ROOT/pkgbuild"
+  exec makepkg -fsi "${rest[@]}"
+fi
+
+if [[ -n $system ]]; then
+  PREFIX=${PREFIX:-/usr/local}
+else
+  PREFIX=${PREFIX:-$HOME/.local}
+fi
+DEST=${DESTDIR:-}$PREFIX
+files=(bin/topdown share/applications/topdown.desktop share/icons/hicolor/scalable/apps/topdown.svg
+       share/licenses/topdown/LICENSE share/doc/topdown/README.md)
+
+# Only ask for sudo when the prefix isn't ours to write.
+sudo=
+target=$DEST; while [[ ! -e $target ]]; do target=$(dirname "$target"); done
+[[ -w $target ]] || sudo=sudo
+
+if [[ -n $uninstall ]]; then
+  for f in "${files[@]}"; do $sudo rm -fv "$DEST/$f"; done
+  $sudo rmdir "$DEST/share/licenses/topdown" "$DEST/share/doc/topdown" 2>/dev/null || true
+  exit 0
+fi
+
+if ! command -v go >/dev/null; then
+  echo "topdown: building needs Go (https://go.dev/dl, or your distro's golang / golang-go package)." >&2
+  echo "         An older Go fetches the version topdown needs by itself (Go 1.21 or later)." >&2
+  exit 1
+fi
+
+version=$(sed -n 's/^pkgver=//p' "$ROOT/pkgbuild/PKGBUILD")
+build=$(mktemp -d); trap 'rm -rf "$build"' EXIT
+echo "Building topdown $version…"
+(cd "$ROOT" && CGO_ENABLED=0 GOFLAGS="-trimpath -mod=readonly" \
+  go build -ldflags "-s -w -X main.version=$version" -o "$build/topdown" ./cmd/topdown)
+
+$sudo install -Dm755 "$build/topdown" "$DEST/bin/topdown"
+# The launcher entry runs `topdown open`; a user prefix may not be on the
+# desktop's PATH, so point it at the binary itself.
+sed "s|^Exec=topdown |Exec=$PREFIX/bin/topdown |" "$ROOT/pkgbuild/topdown.desktop" > "$build/topdown.desktop"
+$sudo install -Dm644 "$build/topdown.desktop" "$DEST/share/applications/topdown.desktop"
+$sudo install -Dm644 "$ROOT/pkgbuild/topdown.svg" "$DEST/share/icons/hicolor/scalable/apps/topdown.svg"
+$sudo install -Dm644 "$ROOT/LICENSE" "$DEST/share/licenses/topdown/LICENSE"
+$sudo install -Dm644 "$ROOT/README.md" "$DEST/share/doc/topdown/README.md"
+echo "Installed topdown $version to $DEST/bin/topdown"
+
+case ":$PATH:" in
+  *":$PREFIX/bin:"*) ;;
+  *) echo "Note: $PREFIX/bin is not on your PATH; add it to use \`topdown\` from a shell." ;;
+esac

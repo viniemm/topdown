@@ -88,13 +88,49 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
   `{"workdir": "~/Work"}`: where new conversations start and new folders are
   made (default `~/Work` when it exists, else `~`).
 
-## Install (Arch)
+## Install
 
     git clone https://github.com/viniemm/topdown && cd topdown
     bin/install
 
-The package installs `/usr/bin/topdown` (one static binary) and replaces the
-old `omarchy-agent-launcher` package (that name stays as a symlink).
+**Arch (Omarchy or not):** `bin/install` builds and installs a pacman package
+(`makepkg -si`): `/usr/bin/topdown`, one static binary, plus the launcher
+entry. It replaces the old `omarchy-agent-launcher` package (that name stays
+as a symlink). Run it again to upgrade; `pacman -R topdown` removes it.
+
+**Fedora, Debian, Ubuntu and the rest:** `bin/install` builds with Go and
+installs for your user into `~/.local` (`bin/topdown`, the launcher entry and
+icon); no root needed. Building needs Go and git:
+
+    sudo dnf install golang git          # Fedora
+    sudo apt install golang-go git       # Debian, Ubuntu
+
+topdown wants the newest Go (see `go.mod`); a distro Go that's older but 1.21
+or later downloads the right toolchain by itself on the first build.
+
+    bin/install --system                 # for everyone, into /usr/local (asks for sudo)
+    bin/install --uninstall              # remove it again (add --system for /usr/local)
+    PREFIX=/opt/topdown bin/install      # anywhere else; DESTDIR=… for packaging
+
+If `~/.local/bin` isn't on your PATH the installer says so.
+
+**What works where.** Everything beyond a terminal is optional, and topdown
+uses it when it's there:
+
+| With | You get |
+|---|---|
+| Omarchy (`omarchy-agent`) | launches through it, plan-usage meters, theme colours |
+| Hyprland | Enter on an open conversation switches to its window |
+| [herdr](https://herdr.dev) | the same for conversations in herdr panes |
+| [zoxide](https://github.com/ajeetdsouza/zoxide) | folder suggestions ranked by frecency |
+| `gio` (glib2) | deleting files on other filesystems to their Trash |
+| `notify-send` | errors from a keybinding shown as a notification |
+
+New windows (`topdown open`, Alt-Enter) open in `xdg-terminal-exec` when it's
+installed, else `$TERMINAL`, else the first of foot, kitty, alacritty,
+ghostty, wezterm, ptyxis, gnome-terminal, konsole, xfce4-terminal or xterm.
+Bind `topdown open` (the hub) and `topdown default` (straight to your default
+agent) to keys in your desktop's shortcut settings.
 
 ## Colours
 
