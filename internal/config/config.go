@@ -29,7 +29,7 @@ type App struct {
 	Usage string `json:"usage,omitempty"`
 }
 
-func AppsFile() string   { return filepath.Join(util.ConfigDir(), "apps.json") }
+func appsFile() string   { return filepath.Join(util.ConfigDir(), "apps.json") }
 func legacyFile() string { return filepath.Join(util.ConfigHome(), "omarchy/agent-launcher.json") }
 
 func defaultFile() string {
@@ -51,14 +51,14 @@ func seed() []App {
 }
 
 func LoadApps() []App {
-	for _, f := range []string{AppsFile(), legacyFile()} {
+	for _, f := range []string{appsFile(), legacyFile()} {
 		b, err := os.ReadFile(f)
 		if err != nil {
 			continue
 		}
 		var apps []App
 		if json.Unmarshal(b, &apps) == nil {
-			if f != AppsFile() {
+			if f != appsFile() {
 				SaveApps(apps) // migrate once
 			}
 			return apps
@@ -77,7 +77,7 @@ func SaveApps(apps []App) error {
 	if err != nil {
 		return err
 	}
-	return util.WriteFileAtomic(AppsFile(), append(b, '\n'), 0o644)
+	return util.WriteFileAtomic(appsFile(), append(b, '\n'), 0o644)
 }
 
 func Default() string {
@@ -178,8 +178,8 @@ func ShellSplit(s string) []string {
 	return out
 }
 
-// Settings are topdown's own options, in ~/.config/topdown/settings.json.
-type Settings struct {
+// settings are topdown's own options, in ~/.config/topdown/settings.json.
+type settings struct {
 	// Workdir is where new conversations start, and where new folders are
 	// made (default ~/Work, Omarchy's convention, when it exists).
 	Workdir string `json:"workdir,omitempty"`
@@ -187,8 +187,8 @@ type Settings struct {
 
 func settingsFile() string { return filepath.Join(util.ConfigDir(), "settings.json") }
 
-func LoadSettings() Settings {
-	var s Settings
+func loadSettings() settings {
+	var s settings
 	if b, err := os.ReadFile(settingsFile()); err == nil {
 		json.Unmarshal(b, &s)
 	}
@@ -197,7 +197,7 @@ func LoadSettings() Settings {
 
 // Workdir is the folder new conversations start in.
 func Workdir() string {
-	if w := LoadSettings().Workdir; w != "" {
+	if w := loadSettings().Workdir; w != "" {
 		return util.ExpandHome(w)
 	}
 	if w := filepath.Join(util.Home(), "Work"); util.IsDir(w) {

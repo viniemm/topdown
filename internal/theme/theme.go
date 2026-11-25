@@ -111,11 +111,11 @@ func Init(p *Palette) {
 	}
 	if roles != nil {
 		for i, name := range roleNames {
-			if c, ok := Hex(str(o[name])); ok {
+			if c, ok := hex(str(o[name])); ok {
 				roles[i] = c
 			}
 		}
-		if c, ok := Hex(str(o["selected"])); ok {
+		if c, ok := hex(str(o["selected"])); ok {
 			selectedBg = &c
 		}
 	}
@@ -126,7 +126,7 @@ func Init(p *Palette) {
 	var agents map[string]string
 	json.Unmarshal(o["agents"], &agents)
 	for id, v := range agents {
-		if c, ok := Hex(v); ok {
+		if c, ok := hex(v); ok {
 			overrides[id] = c
 		}
 	}
@@ -201,12 +201,12 @@ func Fg(r Role, s string) string {
 }
 
 func Bold(s string) string    { return "\x1b[1m" + s + "\x1b[22m" }
-func Inverse(s string) string { return "\x1b[7m" + s + "\x1b[27m" }
+func inverse(s string) string { return "\x1b[7m" + s + "\x1b[27m" }
 
 // Selected is the selection background; inner colour changes never reset it (only \x1b[49m would).
 func Selected(s string) string {
 	if selectedBg == nil {
-		return Inverse(s)
+		return inverse(s)
 	}
 	c := *selectedBg
 	return fmt.Sprintf("\x1b[48;2;%d;%d;%dm%s\x1b[49m", c[0], c[1], c[2], s)

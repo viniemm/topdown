@@ -26,7 +26,7 @@ type Palette struct {
 	Fg, Bg, Accent, Red, Green, Yellow, Blue, Magenta, Cyan, Orange RGB
 }
 
-func Hex(s string) (RGB, bool) {
+func hex(s string) (RGB, bool) {
 	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
 	if len(s) != 6 {
 		return RGB{}, false
@@ -61,7 +61,7 @@ func readOmarchy() *Palette {
 	sc := bufio.NewScanner(fh)
 	for sc.Scan() {
 		if m := tomlLine.FindStringSubmatch(sc.Text()); m != nil {
-			kv[m[1]], _ = Hex(m[2])
+			kv[m[1]], _ = hex(m[2])
 		}
 	}
 	pick := func(names ...string) (RGB, bool) {

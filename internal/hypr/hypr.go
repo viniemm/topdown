@@ -10,13 +10,13 @@ import (
 	"github.com/viniemm/topdown/internal/util"
 )
 
-func Present() bool {
+func present() bool {
 	return os.Getenv("HYPRLAND_INSTANCE_SIGNATURE") != "" && util.Which("hyprctl") != ""
 }
 
 // WindowForPID is the window address of the terminal that owns pid, walking up its parents.
 func WindowForPID(pid int) string {
-	if !Present() {
+	if !present() {
 		return ""
 	}
 	out, err := exec.Command("hyprctl", "clients", "-j").Output()

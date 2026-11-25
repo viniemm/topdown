@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// Parent is pid's parent (0 if unknown).
-func Parent(pid int) int {
+// parent is pid's parent (0 if unknown).
+func parent(pid int) int {
 	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return 0
@@ -29,7 +29,7 @@ func Ancestors(pid int) []int {
 	var out []int
 	for hops := 0; pid > 1 && hops < 64; hops++ {
 		out = append(out, pid)
-		pid = Parent(pid)
+		pid = parent(pid)
 	}
 	return out
 }

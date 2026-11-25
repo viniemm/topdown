@@ -11,8 +11,8 @@ import (
 
 func boundary(r rune) bool { return strings.ContainsRune(" \t/_.-:", r) }
 
-// Score of term in text, or -1 when it doesn't match.
-func Score(term, text string) int {
+// score of term in text, or -1 when it doesn't match.
+func score(term, text string) int {
 	t := []rune(strings.ToLower(text))
 	q := []rune(strings.ToLower(term))
 	if len(q) == 0 {
@@ -67,7 +67,7 @@ outer:
 		t := text(it)
 		total := 0
 		for _, term := range terms {
-			s := Score(term, t)
+			s := score(term, t)
 			if s < 0 {
 				continue outer
 			}
