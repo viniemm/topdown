@@ -110,14 +110,12 @@ roles (`accent`, `border`, `dim`, `muted`, `success`, `warning`, `error`,
 
 ## Motion
 
-The logo sweeps in when the hub opens and a shimmer crosses it every few
-seconds; the selection bar fades in as you move; open conversations' ●
-markers breathe; a spinner shows while usage refreshes in the background.
+The selection bar fades in as you move; open conversations' ● markers
+breathe; a spinner shows while usage refreshes in the background.
 
-The ticker only runs while something moves, and frames where only the header
-moves repaint just the header. Turn motion off with `"animations": false` in
-`theme.json`, or `TOPDOWN_REDUCED_MOTION=1`. Motion is also off without true
-colour.
+The ticker only runs while something moves. Turn motion off with
+`"animations": false` in `theme.json`, or `TOPDOWN_REDUCED_MOTION=1`. Motion
+is also off without true colour.
 
 ## Development
 

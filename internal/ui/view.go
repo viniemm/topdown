@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -18,36 +17,8 @@ import (
 	"github.com/viniemm/topdown/internal/util"
 )
 
-// viewCache is the last full frame. While only the header band moves (the
-// logo's shimmer) and nothing else has happened, a frame
-// repaints just the band's rows over it: the list, sidebar and footer cost
-// far more to draw than the band.
-type viewCache struct {
-	ok    bool // the cached frame is still right below the band
-	w, h  int
-	at    time.Time
-	head  int // band rows, from line 1
-	lines []string
-}
-
-const viewCacheAge = 2 * time.Second // relative times ("5 min ago") in the body stay fresh
-
 func (h *Hub) View() tea.View {
-	if c := &h.cache; c.ok && c.w == h.width && c.h == h.height && h.anim.now.Sub(c.at) < viewCacheAge {
-		if hd := h.header(); hd != nil {
-			W := max(40, h.width)
-			if band := hd(W - 4); len(band) == c.head {
-				for i, l := range band {
-					c.lines[1+i] = headLine(l, W)
-				}
-				return h.view(strings.Join(c.lines, "\n"))
-			}
-		}
-	}
-	content := h.render()
-	h.cache = viewCache{w: h.width, h: h.height, at: h.anim.now, lines: strings.Split(content, "\n"), head: len(logoMark),
-		ok: h.hasHeader() && h.fade() >= 1 && !h.anim.bodyPulsing && len(h.refreshing) == 0}
-	return h.view(content)
+	return h.view(h.render())
 }
 
 func (h *Hub) view(content string) tea.View {
@@ -57,7 +28,7 @@ func (h *Hub) view(content string) tea.View {
 }
 
 func (h *Hub) render() string {
-	h.anim.pulsing, h.anim.bodyPulsing = false, false // set again by whatever draws a marker
+	h.anim.pulsing = false // set again by whatever draws a marker
 	entries := h.entries()
 	return h.frame.render(h.width, h.height, entries,
 		func(w, rows int) []string {
@@ -74,50 +45,7 @@ func (h *Hub) render() string {
 				return entryStyle{icon: icon, annotation: dim(e.annotation)}
 			})
 		},
-		h.renderBody, h.footer(), h.header())
-}
-
-// hasHeader: the window has room for the logo band.
-func (h *Hub) hasHeader() bool { return h.height >= 22 && h.width >= 50 }
-
-// header is the logo band, when the window has room for it: the logo, and
-// the stats on the right. The logo is never cut.
-func (h *Hub) header() func(w int) []string {
-	if !h.hasHeader() {
-		return nil
-	}
-	return func(w int) []string {
-		f := h.logoFrame()
-		var lines []string
-		if w >= logoWidth+30 {
-			lines = logo(f, "  v"+h.opts.Version)
-		} else {
-			lines = compactLogo(f)
-		}
-		open := len(h.live)
-		stats := []string{
-			dim(fmt.Sprintf("%d apps", len(h.apps))),
-			"",
-			"",
-			dim("agents, from the top down"),
-		}
-		if open > 0 {
-			stats[0] += dim(" · ") + h.liveDot() + dim(fmt.Sprintf(" %d open", open))
-		}
-		if d := config.Default(); d != "" {
-			stats[1] = dim("default ") + theme.Agent(d, d)
-		}
-		for i := range lines {
-			l := " " + lines[i]
-			// Stats only where they fit beside the logo.
-			if i < len(stats) && width(lines[i])+width(stats[i])+4 <= w {
-				lines[i] = spread(l, stats[i]+" ", w)
-			} else {
-				lines[i] = fit(l, w)
-			}
-		}
-		return lines
-	}
+		h.renderBody, h.footer())
 }
 
 // liveDot is the open-conversation marker, breathing when animated.
@@ -127,12 +55,6 @@ func (h *Hub) liveDot() string {
 		return theme.Fg(theme.Success, "●")
 	}
 	return theme.FgRGB(theme.Mix(theme.Green(), theme.Bg(), 0.6*h.pulse()), "●")
-}
-
-// bodyDot is liveDot for the list and detail panel.
-func (h *Hub) bodyDot() string {
-	h.anim.bodyPulsing = true
-	return h.liveDot()
 }
 
 // selectBar paints the selection: a background that fades in, and fades out
@@ -286,7 +208,7 @@ func (h *Hub) renderRow(r row, aw, lw int) string {
 	s := r.s
 	live := " "
 	if _, ok := h.live[s.ID]; ok {
-		live = h.bodyDot()
+		live = h.liveDot()
 	}
 	proj := util.Project(s.Cwd)
 	return " " + live + " " + theme.Age(s.When, pad(util.Stamp(s.When), 11)) + theme.Agent(s.Agent, pad(s.Agent, aw)) +
@@ -324,7 +246,7 @@ func (h *Hub) renderDetail(w int) []string {
 		}
 		live := ""
 		if _, ok := h.live[s.ID]; ok {
-			live = "  " + h.bodyDot() + theme.Fg(theme.Success, " open")
+			live = "  " + h.liveDot() + theme.Fg(theme.Success, " open")
 		}
 		out := []string{
 			theme.Bold(util.Oneline(s.Title, w)),

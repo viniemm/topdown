@@ -279,33 +279,14 @@ func Rich() bool { return pal != nil }
 // "animations": false in theme.json or TOPDOWN_REDUCED_MOTION).
 func Animated() bool { return pal != nil && animations }
 
-// Bg and FgColor are the palette's background and text colours.
-func Bg() RGB      { return pal.Bg }
-func FgColor() RGB { return pal.Fg }
+// Bg is the palette's background colour.
+func Bg() RGB { return pal.Bg }
 
 // RoleColor is a role's true colour (only meaningful when Rich).
 func RoleColor(r Role) RGB { return roles[r] }
 
-// LogoStops are the logo's gradient stops: magenta, the accent, cyan (omp uses pink → blue).
-func LogoStops() []RGB { return []RGB{pal.Magenta, pal.Accent, pal.Cyan} }
-
 // Green is the success colour (open-conversation markers pulse in it).
 func Green() RGB { return pal.Green }
-
-// Colors is the palette itself, for drawings that want its hues, such as the
-// logo workshop preview (only meaningful when Rich).
-func Colors() Palette { return *pal }
-
-// Grad is the colour at t (0..1) along evenly spaced stops.
-func Grad(stops []RGB, t float64) RGB {
-	t = min(1, max(0, t))
-	if len(stops) == 1 {
-		return stops[0]
-	}
-	f := t * float64(len(stops)-1)
-	i := min(int(f), len(stops)-2)
-	return Mix(stops[i], stops[i+1], f-float64(i))
-}
 
 // FgRGB and BgRGB colour s with an explicit true colour.
 func FgRGB(c RGB, s string) string { return fg(c, s) }

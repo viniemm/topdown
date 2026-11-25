@@ -106,37 +106,19 @@ func gradBorder(s string, reverse bool) string {
 	return b.String()
 }
 
-// headLine is one row of the header band in a frame totalWidth wide (at least 40).
-func headLine(l string, totalWidth int) string {
-	return border("│") + " " + fit(l, totalWidth-4) + " " + border("│")
-}
-
 // render is the whole screen: height lines of exactly totalWidth columns.
-// header, when given, is a band across the top (the logo) above the split.
 func (f *frame) render(totalWidth, height int, entries []entry, sidebarFn func(w, rows int) []string,
-	bodyFn func(w, rows int) []string, footer string, header func(w int) []string) string {
+	bodyFn func(w, rows int) []string, footer string) string {
 	W := max(40, totalWidth)
-	var head []string
-	if header != nil {
-		head = header(W - 4)
-	}
-	rows := max(3, height-4-len(head)-min(1, len(head)))
+	rows := max(3, height-4)
 	sw := min(f.sidebarWidth(entries), max(10, (W-7)/3))
 	bw := W - sw - 7
 	left := sidebarFn(sw, rows)
 	body := bodyFn(bw, rows)
 
 	var b strings.Builder
-	if len(head) > 0 {
-		b.WriteString(gradBorder("╭"+strings.Repeat("─", W-2)+"╮", false))
-		for _, l := range head {
-			b.WriteString("\n" + headLine(l, W))
-		}
-		b.WriteString("\n" + border("├"+strings.Repeat("─", sw+2)+"┬"+strings.Repeat("─", bw+2)+"┤"))
-	} else {
-		name := " " + f.title + " "
-		b.WriteString(gradBorder("╭─"+name+strings.Repeat("─", max(0, sw+1-width(name)))+"┬"+strings.Repeat("─", bw+2)+"╮", false))
-	}
+	name := " " + f.title + " "
+	b.WriteString(gradBorder("╭─"+name+strings.Repeat("─", max(0, sw+1-width(name)))+"┬"+strings.Repeat("─", bw+2)+"╮", false))
 	at := func(lines []string, i int) string {
 		if i < len(lines) {
 			return lines[i]

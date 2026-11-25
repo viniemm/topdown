@@ -127,7 +127,6 @@ type Hub struct {
 	frame         frame
 	anim          animState
 	refreshing    map[string]bool // agent ids whose usage is being refreshed
-	cache         viewCache
 	// an agent's page: the folders its New rows can start in (zoxide first)
 	cands      []folders.Folder
 	candsAgent string
@@ -197,7 +196,7 @@ func (h *Hub) reload(keepCursor bool) {
 		prev = &p
 	}
 	h.rows = nil
-	h.live = agent.Live(config.SessionAgents(h.apps)...) // for ● markers and the header's count
+	h.live = agent.Live(config.SessionAgents(h.apps)...) // for ● markers
 	if h.scope == "apps" {
 		idx := make([]int, len(h.apps))
 		for i := range idx {
@@ -391,9 +390,6 @@ func (h *Hub) rowAgent(r row) string {
 // ---------- input ----------
 
 func (h *Hub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if _, ok := msg.(tickMsg); !ok {
-		h.cache.ok = false // anything but a frame tick may change what is below the band
-	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h.width, h.height = msg.Width, msg.Height
