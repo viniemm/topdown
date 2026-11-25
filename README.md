@@ -33,10 +33,11 @@ Pick something and the hub's own terminal becomes that agent; no second window.
 
 | Key | Action |
 |---|---|
-| Enter / Alt-Enter | Launch or resume here / in a new window (an open conversation: switch to its window) |
+| Enter / Alt-Enter | Launch or resume here / in a new window (an open conversation: switch to its window, or to its [herdr](https://herdr.dev) pane, attaching herdr if no client is) |
+| Enter on an agent | Its page: **+ New conversation** on top, its conversations below (typing searches them). Enter on New picks the folder: your workdir is first, so Enter again starts there; or type to search [zoxide](https://github.com/ajeetdsouza/zoxide)'s folders and the agent's projects, a path (`~/`, `/`, `./`; Tab goes into a folder), or a name that isn't a folder yet (**+ new folder** makes it). Alt-Enter on an agent still launches straight away |
 | Ctrl-O | Launch options (Claude: model, effort, permission mode, fork on resume, Chrome) |
 | Tab | Apps ↔ recent conversations |
-| → / ← | An agent's conversations / back (← also leaves a search there) |
+| → / ← | → is Enter (open); ← goes back (it also leaves a search there) |
 | Type | Fuzzy search (agent, project, title) |
 | Ctrl-D | Make the highlighted agent the default |
 | Ctrl-R | Refresh the agent's usage |
@@ -70,8 +71,7 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
 - **Running in place.** When the hub closes, topdown `exec`s the agent, so the
   terminal becomes it and nothing stays running behind it.
 - **Omarchy is optional.** When `omarchy-agent` exists, agents launch through
-  it (auto-permission flags, account pinning, `~/Work`, the agent window
-  class), via a PATH shim that adds resume and extra arguments. Plan usage is
+  it (auto-permission flags, account pinning, the agent window class), via a PATH shim that adds resume and extra arguments. Plan usage is
   read (never written) from `~/.local/state/omarchy/agents/usage/`. Without
   Omarchy, agents run directly.
 - **Conversations** are read from each agent's store: Claude
@@ -84,7 +84,9 @@ Suggested Hyprland bindings (`~/.config/hypr/bindings.lua` on Omarchy):
   `~/.claude/sessions/<pid>.json`.
 - **Config:** `~/.config/topdown/apps.json` (migrated from Omarchy's
   `agent-launcher.json`). An agent app may add `"args"` to every launch and
-  resume; Hermes defaults to `--tui`.
+  resume; Hermes defaults to `--tui`. `~/.config/topdown/settings.json` holds
+  `{"workdir": "~/Work"}`: where new conversations start and new folders are
+  made (default `~/Work` when it exists, else `~`).
 
 ## Install (Arch)
 

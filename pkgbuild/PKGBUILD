@@ -1,5 +1,5 @@
 pkgname=topdown
-pkgver=0.9.0
+pkgver=0.9.3
 pkgrel=1
 pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
 arch=('x86_64' 'aarch64')
@@ -9,7 +9,8 @@ depends=('bash' 'util-linux')   # the Omarchy shim is bash; setsid detaches new 
 optdepends=('omarchy: launch through omarchy-agent, plan-usage meters, theme colours'
             'hyprland: switch to an already-open conversation'
             'xdg-terminal-exec: open agents in a new terminal window'
-            'glib2: trash files that live on another filesystem')
+            'glib2: trash files that live on another filesystem'
+            'zoxide: rank folder suggestions by frecency')
 makedepends=('go')
 provides=('omarchy-agent-launcher')
 conflicts=('omarchy-agent-launcher')

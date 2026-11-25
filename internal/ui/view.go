@@ -12,6 +12,7 @@ import (
 	"github.com/viniemm/topdown/internal/agent"
 	"github.com/viniemm/topdown/internal/catalog"
 	"github.com/viniemm/topdown/internal/config"
+	"github.com/viniemm/topdown/internal/folders"
 	"github.com/viniemm/topdown/internal/omarchy"
 	"github.com/viniemm/topdown/internal/theme"
 	"github.com/viniemm/topdown/internal/util"
@@ -181,6 +182,8 @@ func (h *Hub) footer() string {
 	k := func(key, what string) string { return theme.Fg(theme.Accent, key) + " " + what }
 	sep := theme.Fg(theme.Dim, " · ")
 	switch {
+	case h.modal != nil && h.modal.kind == "folders":
+		return strings.Join([]string{k("type", "search"), k("↑/↓", "folder"), k("Tab", "go into"), k("⏎", "start"), k("Alt-⏎", "new window"), k("esc", "back")}, sep)
 	case h.modal != nil && h.modal.kind == "sheet":
 		return strings.Join([]string{k("↑/↓", "option"), k("←/→", "value"), k("⏎", "launch"), k("Alt-⏎", "new window"), k("esc", "back")}, sep)
 	case h.modal != nil:
@@ -192,9 +195,9 @@ func (h *Hub) footer() string {
 	if h.scope == "apps" {
 		other = "recent"
 	}
-	parts := []string{k("⏎", "open"), k("Alt-⏎", "window"), k("^O", "options"), k("Tab", other)}
+	parts := []string{k("⏎/→", "open"), k("Alt-⏎", "window"), k("^O", "options"), k("Tab", other)}
 	if h.scope == "apps" {
-		parts = append(parts, k("→", "chats"), k("^D", "default"), k("^R", "usage"), k("^A", "add"))
+		parts = append(parts, k("^D", "default"), k("^R", "usage"), k("^A", "add"))
 	} else if strings.HasPrefix(h.scope, "agent:") {
 		parts = append(parts, k("←", "back"))
 	}
@@ -298,6 +301,8 @@ func (h *Hub) renderRow(r row, aw, lw int) string {
 		return " " + def + " " + dot + " " + pad(a.Label, lw) + "  " + meter + "  " + dim(kind)
 	case rowAdd:
 		return "   " + theme.Fg(theme.Accent, "+ Add app…")
+	case rowNew:
+		return "   " + theme.Fg(theme.Accent, "+ New conversation") + dim("  in "+util.ShortPath(r.dir)+" or another folder…")
 	case rowMore:
 		return dim("   ↓ more conversations…")
 	case rowEmpty:
@@ -361,6 +366,9 @@ func (h *Hub) renderDetail(w int) []string {
 		return out
 	case rowAdd:
 		return []string{dim("Installed agents topdown knows, or any command to run in a terminal.")}
+	case rowNew:
+		return []string{theme.Bold("New " + h.apps[r.app].Label + " conversation"),
+			dim("⏎ picks the folder: " + util.ShortPath(r.dir) + " is first, or search zoxide's folders, type a path, or a new name to make.")}
 	}
 	return nil
 }
@@ -376,6 +384,29 @@ func (h *Hub) renderModal(w int) []string {
 	case "input":
 		m.input.SetWidth(max(1, w-12))
 		return []string{theme.Bold(m.title), "", truncate(m.input.View(), w), "", hint("⏎ save · esc cancel")}
+	case "folders":
+		m.input.SetWidth(max(1, w-4))
+		out := []string{theme.Bold("New " + h.apps[m.app].Label + " conversation in…"), "", theme.Fg(theme.Accent, "› ") + truncate(m.input.View(), w-2), ""}
+		for i, r := range m.choices {
+			where := util.ShortPath(r.dir)
+			meta := folderMeta(r.folder)
+			if r.create {
+				meta = "+ new folder"
+			}
+			if i == m.cursor {
+				out = append(out, theme.Selected(fit(" "+where+"  "+meta, w)))
+				continue
+			}
+			tail := theme.Fg(theme.Dim, meta)
+			if r.create {
+				tail = theme.Fg(theme.Success, meta)
+			}
+			out = append(out, truncate(" "+theme.Project(util.Project(r.dir), where)+"  "+tail, w))
+		}
+		if len(m.choices) == 0 {
+			out = append(out, theme.Fg(theme.Dim, " no folders match"))
+		}
+		return out
 	case "add":
 		out := []string{theme.Bold("Add which app?"), ""}
 		for i, it := range m.items {
@@ -434,4 +465,19 @@ func scrollbar(total, visible, offset int) []string {
 		}
 	}
 	return out
+}
+
+// folderMeta is what topdown knows about a folder: zoxide's score, conversations there.
+func folderMeta(f folders.Folder) string {
+	var meta []string
+	if f.Rank > 0 {
+		meta = append(meta, fmt.Sprintf("★ %.0f", f.Rank))
+	}
+	switch {
+	case f.Convs == 1:
+		meta = append(meta, "1 conversation")
+	case f.Convs > 1:
+		meta = append(meta, fmt.Sprintf("%d conversations", f.Convs))
+	}
+	return strings.Join(meta, " · ")
 }

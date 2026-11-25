@@ -1,6 +1,7 @@
-// Package config holds the user's app list and default agent.
+// Package config holds the user's app list, default agent and settings.
 //
 //	~/.config/topdown/apps.json   the list (migrated from Omarchy's agent-launcher.json)
+//	~/.config/topdown/settings.json  {"workdir": "~/Work"}: where new conversations start
 //	default agent                 Omarchy's ~/.config/omarchy/defaults/agent on Omarchy, else ~/.config/topdown/default
 package config
 
@@ -163,4 +164,43 @@ func ShellSplit(s string) []string {
 		out = append(out, cur.String())
 	}
 	return out
+}
+
+// Settings are topdown's own options, in ~/.config/topdown/settings.json.
+type Settings struct {
+	// Workdir is where new conversations start, and where new folders are
+	// made (default ~/Work, Omarchy's convention, when it exists).
+	Workdir string `json:"workdir,omitempty"`
+}
+
+func settingsFile() string { return filepath.Join(util.ConfigDir(), "settings.json") }
+
+func LoadSettings() Settings {
+	var s Settings
+	if b, err := os.ReadFile(settingsFile()); err == nil {
+		json.Unmarshal(b, &s)
+	}
+	return s
+}
+
+// Workdir is the folder new conversations start in.
+func Workdir() string {
+	if w := LoadSettings().Workdir; w != "" {
+		switch {
+		case w == "~":
+			return util.Home()
+		case strings.HasPrefix(w, "~/"):
+			return filepath.Join(util.Home(), w[2:])
+		}
+		return w
+	}
+	if w := filepath.Join(util.Home(), "Work"); isDir(w) {
+		return w
+	}
+	return util.Home()
+}
+
+func isDir(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.IsDir()
 }

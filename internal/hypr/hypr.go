@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 
+	"github.com/viniemm/topdown/internal/proc"
 	"github.com/viniemm/topdown/internal/util"
 )
 
@@ -35,21 +34,10 @@ func WindowForPID(pid int) string {
 	for _, c := range clients {
 		byPID[c.PID] = c.Address
 	}
-	for hops := 0; pid > 1 && hops < 64; hops++ {
-		if addr, ok := byPID[pid]; ok {
+	for _, p := range proc.Ancestors(pid) {
+		if addr, ok := byPID[p]; ok {
 			return addr
 		}
-		stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-		if err != nil {
-			return ""
-		}
-		// "pid (comm) state ppid …": comm may contain spaces, so split after the last ')'.
-		s := string(stat)
-		fields := strings.Fields(s[strings.LastIndexByte(s, ')')+1:])
-		if len(fields) < 2 {
-			return ""
-		}
-		pid, _ = strconv.Atoi(fields[1])
 	}
 	return ""
 }

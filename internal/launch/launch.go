@@ -31,6 +31,10 @@ type Spec struct {
 }
 
 func agentSpec(agentID string, args []string, cwd string, where Where) Spec {
+	// Launches from $HOME start in the workdir (~/Work, as omarchy-agent does).
+	if wd, _ := os.Getwd(); cwd == "" && wd == util.Home() {
+		cwd = config.Workdir()
+	}
 	if omarchy.Present() {
 		shim := omarchy.EnsureShim()
 		env := map[string]string{
@@ -42,14 +46,7 @@ func agentSpec(agentID string, args []string, cwd string, where Where) Spec {
 		if where == Here {
 			env["TOPDOWN_INLINE"] = "1"
 		}
-		s := Spec{Argv: []string{"omarchy-agent"}, Env: env}
-		// Same convention as omarchy-agent: launches from $HOME start in ~/Work.
-		if wd, _ := os.Getwd(); wd == util.Home() {
-			if work := filepath.Join(util.Home(), "Work"); isDir(work) {
-				s.Cwd = work
-			}
-		}
-		return s
+		return Spec{Argv: []string{"omarchy-agent"}, Env: env}
 	}
 	bin := agentID
 	var launchArgs []string
@@ -80,22 +77,26 @@ func isDir(p string) bool {
 	return err == nil && st.IsDir()
 }
 
-// App launches an app from the list, with launch-sheet arguments.
-func App(app config.App, where Where, extra []string) Spec {
+// App launches an app from the list, with launch-sheet arguments, in cwd
+// (empty: where topdown runs, or ~/Work from $HOME under Omarchy).
+func App(app config.App, where Where, extra []string, cwd string) Spec {
 	if app.Agent != "" {
-		return agentSpec(app.Agent, append(config.AgentArgs(&app, app.Agent), extra...), "", where)
+		return agentSpec(app.Agent, append(config.AgentArgs(&app, app.Agent), extra...), cwd, where)
 	}
-	sh := []string{"bash", "-lc", app.Command}
-	if omarchy.Present() {
-		if where == Here {
-			return Spec{Argv: sh}
-		}
-		return Spec{Argv: append([]string{"omarchy-launch-tui", "--app-id=" + omarchy.WindowClass}, sh...)}
+	s := Command([]string{"bash", "-lc", app.Command}, where)
+	s.Cwd = cwd
+	return s
+}
+
+// Command runs a plain command (no agent wrapper) here or in a new window.
+func Command(argv []string, where Where) Spec {
+	switch {
+	case where == Here:
+		return Spec{Argv: argv}
+	case omarchy.Present():
+		return Spec{Argv: append([]string{"omarchy-launch-tui", "--app-id=" + omarchy.WindowClass}, argv...)}
 	}
-	if where == Window {
-		return Spec{Argv: inTerminal(sh)}
-	}
-	return Spec{Argv: sh}
+	return Spec{Argv: inTerminal(argv)}
 }
 
 // Resume continues a conversation in its own project directory.

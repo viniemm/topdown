@@ -45,7 +45,7 @@ func TestOmarchyGoesThroughShim(t *testing.T) {
 	home := testhome.New(t)
 	stubs(t, home, true)
 	config.SaveApps([]config.App{{ID: "hermes", Label: "Hermes", Agent: "hermes"}})
-	s := launch.App(config.App{ID: "hermes", Label: "Hermes", Agent: "hermes"}, launch.Here, nil)
+	s := launch.App(config.App{ID: "hermes", Label: "Hermes", Agent: "hermes"}, launch.Here, nil, "")
 	if !slices.Equal(s.Argv, []string{"omarchy-agent"}) {
 		t.Fatalf("argv %v", s.Argv)
 	}
@@ -61,7 +61,7 @@ func TestAppArgsReplaceDefaults(t *testing.T) {
 	home := testhome.New(t)
 	stubs(t, home, true)
 	args, _ := json.Marshal("--cli 'two words'")
-	s := launch.App(config.App{ID: "h", Label: "H", Agent: "hermes", Args: args}, launch.Here, nil)
+	s := launch.App(config.App{ID: "h", Label: "H", Agent: "hermes", Args: args}, launch.Here, nil, "")
 	if s.Env["TOPDOWN_ARGS"] != "--cli\ntwo words" {
 		t.Fatalf("args %q", s.Env["TOPDOWN_ARGS"])
 	}

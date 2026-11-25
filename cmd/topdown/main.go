@@ -62,7 +62,7 @@ func run(args []string) error {
 		}
 		for _, a := range config.LoadApps() {
 			if a.ID == args[0] {
-				return here(launch.App(a, launch.Here, nil), a.Label)
+				return here(launch.App(a, launch.Here, nil, ""), a.Label)
 			}
 		}
 		return fmt.Errorf("no app named %q", args[0])
@@ -120,9 +120,15 @@ func pick(chooseDefault bool) error {
 	r := hub.Result
 	switch r.Action {
 	case "focus":
+		if r.Pane != nil {
+			r.Pane.Select()
+		}
 		hypr.Focus(r.Address)
+	case "attach":
+		r.Pane.Select()
+		return act(launch.Command(r.Pane.AttachArgv(), r.Where), r.Where, "herdr")
 	case "launch":
-		return act(launch.App(r.App, r.Where, r.Extra), r.Where, r.App.Label)
+		return act(launch.App(r.App, r.Where, r.Extra, r.Cwd), r.Where, r.App.Label)
 	case "resume":
 		return act(launch.Resume(r.Session, r.Where, r.Extra), r.Where, r.Session.Agent+" — "+util.Oneline(r.Session.Title, 60))
 	}

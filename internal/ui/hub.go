@@ -8,6 +8,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -18,9 +19,11 @@ import (
 	"github.com/viniemm/topdown/internal/agent"
 	"github.com/viniemm/topdown/internal/catalog"
 	"github.com/viniemm/topdown/internal/config"
+	"github.com/viniemm/topdown/internal/folders"
 	"github.com/viniemm/topdown/internal/fuzzy"
 	"github.com/viniemm/topdown/internal/hypr"
 	"github.com/viniemm/topdown/internal/launch"
+	"github.com/viniemm/topdown/internal/mux"
 	"github.com/viniemm/topdown/internal/omarchy"
 	"github.com/viniemm/topdown/internal/theme"
 	"github.com/viniemm/topdown/internal/util"
@@ -39,6 +42,7 @@ const (
 	rowSession
 	rowMore
 	rowEmpty
+	rowNew // a new conversation on an agent's page, in dir
 )
 
 type row struct {
@@ -46,16 +50,23 @@ type row struct {
 	app  int // index into Hub.apps
 	s    agent.Session
 	text string
+	// rowNew: where it starts, whether that folder has to be made, and what
+	// topdown knows about it
+	dir    string
+	create bool
+	folder folders.Folder
 }
 
 // Result is what the hub decided; the caller acts on it after the UI is gone.
 type Result struct {
-	Action  string // "quit", "launch", "resume", "focus"
+	Action  string // "quit", "launch", "resume", "focus", "attach"
 	App     config.App
 	Session agent.Session
 	Where   launch.Where
 	Extra   []string
-	Address string
+	Cwd     string    // launch: the folder to start in
+	Address string    // focus: the window
+	Pane    *mux.Pane // focus/attach: the herdr pane to select first
 }
 
 type addItem struct {
@@ -77,6 +88,11 @@ type modal struct {
 	agentID string
 	options []agent.Option
 	values  []int
+	// folder picker: the choices for what's typed, and the launch to make
+	choices []row
+	app     int
+	where   launch.Where
+	extra   []string
 }
 
 type Options struct {
@@ -111,6 +127,9 @@ type Hub struct {
 	refreshing map[string]bool // agent ids whose usage is being refreshed
 	scene      *scene          // the header's landscape, built for its width
 	cache      viewCache
+	// an agent's page: the folders its New rows can start in (zoxide first)
+	cands      []folders.Folder
+	candsAgent string
 	Result     Result
 }
 
@@ -175,6 +194,8 @@ func sameRow(a, b row) bool {
 		return a.s.Agent == b.s.Agent && a.s.ID == b.s.ID
 	case rowApp:
 		return a.app == b.app
+	case rowNew:
+		return a.dir == b.dir
 	}
 	return true
 }
@@ -211,6 +232,9 @@ func (h *Hub) reload(keepCursor bool) {
 		if query != "" {
 			limit = max(limit, searchLimit)
 		}
+		if i := h.appIndex(agents[0]); strings.HasPrefix(h.scope, "agent:") && query == "" && i >= 0 {
+			h.rows = append(h.rows, row{kind: rowNew, app: i, dir: config.Workdir()})
+		}
 		pg := catalog.Recent(agents, limit)
 		sessions := pg.Sessions
 		if query != "" {
@@ -225,10 +249,10 @@ func (h *Hub) reload(keepCursor bool) {
 		if h.more {
 			h.rows = append(h.rows, row{kind: rowMore})
 		}
-		if len(h.rows) == 0 {
+		if len(h.rows) == 0 || h.rows[len(h.rows)-1].kind == rowNew {
 			text := "no conversations yet"
 			if query != "" {
-				text = "no matches"
+				text = "no conversations match"
 			}
 			h.rows = append(h.rows, row{kind: rowEmpty, text: text})
 		}
@@ -241,6 +265,106 @@ func (h *Hub) reload(keepCursor bool) {
 		}
 	}
 	h.cursor = max(0, min(h.cursor, len(h.rows)-1))
+}
+
+// folderChoices are the folder picker's rows: the workdir and the most-used
+// folders, or, for what's typed, the folders that match (zoxide's, the agent's
+// projects, or a typed path), then a new folder when it isn't one yet.
+func (h *Hub) folderChoices(i int, query string) []row {
+	agentID := h.apps[i].Agent
+	work := config.Workdir()
+	if h.candsAgent != agentID {
+		convs := map[string]int{}
+		for _, s := range catalog.Recent([]string{agentID}, 300).Sessions {
+			convs[s.Cwd]++
+		}
+		h.cands, h.candsAgent = folders.Candidates(convs), agentID
+	}
+	var out []row
+	seen := map[string]bool{}
+	add := func(f folders.Folder) {
+		if !seen[f.Path] && len(out) < folderChoicesMax {
+			seen[f.Path] = true
+			out = append(out, row{kind: rowNew, app: i, dir: f.Path, folder: f})
+		}
+	}
+	if query == "" {
+		add(h.knownFolder(work))
+		for _, f := range h.cands {
+			add(f)
+		}
+		return out
+	}
+	// A typed path that's already a folder comes first, then what it completes to.
+	if p := folders.Expand(query, work); folders.IsPath(query) && folders.Exists(p) {
+		add(h.knownFolder(p))
+	}
+	for _, f := range folders.Match(h.cands, query, work) {
+		add(f)
+	}
+	if p := folders.Expand(query, work); !folders.Exists(p) && validName(query) {
+		out = append(out, row{kind: rowNew, app: i, dir: p, create: true})
+	}
+	return out
+}
+
+// folderChoicesMax is how many folders the picker offers.
+const folderChoicesMax = 8
+
+// knownFolder is p with what topdown knows about it (zoxide's score, conversations).
+func (h *Hub) knownFolder(p string) folders.Folder {
+	for _, c := range h.cands {
+		if c.Path == p {
+			return c
+		}
+	}
+	return folders.Folder{Path: p}
+}
+
+// openFolders is the folder picker for a new conversation of app i.
+func (h *Hub) openFolders(i int, where launch.Where, extra []string) {
+	m := &modal{kind: "folders", app: i, where: where, extra: extra,
+		input: newInput("", "")}
+	m.input.Placeholder = "search folders (zoxide), a path, or a new name"
+	m.choices = h.folderChoices(i, "")
+	h.modal = m
+}
+
+// startNew starts a new conversation in a folder row, making the folder first if needed.
+func (h *Hub) startNew(r row, where launch.Where, extra []string) tea.Cmd {
+	if r.create {
+		if err := os.MkdirAll(r.dir, 0o755); err != nil {
+			h.message(theme.Fg(theme.Error, err.Error()))
+			return nil
+		}
+	}
+	folders.Added(r.dir)
+	return h.done(Result{Action: "launch", App: h.apps[r.app], Where: where, Extra: extra, Cwd: r.dir})
+}
+
+// validName: what's typed could be a folder to make (not a search with
+// characters no one puts in a folder name).
+func validName(q string) bool {
+	return strings.TrimSpace(q) == q && !strings.ContainsAny(q, "*?\"|<>:\x00")
+}
+
+// appIndex is the app that runs agentID (-1: none in the list).
+func (h *Hub) appIndex(agentID string) int {
+	for i, a := range h.apps {
+		if a.Agent == agentID {
+			return i
+		}
+	}
+	return -1
+}
+
+// openPage shows an agent's page: New conversation on top, its conversations below.
+func (h *Hub) openPage(app int) {
+	h.prevScope = &struct {
+		scope  string
+		cursor int
+	}{h.scope, h.cursor}
+	h.setScope("agent:"+h.apps[app].Agent, 0)
 }
 
 func (h *Hub) setScope(scope string, cursor int) {
@@ -258,7 +382,7 @@ func (h *Hub) current() (row, bool) {
 
 func (h *Hub) rowAgent(r row) string {
 	switch r.kind {
-	case rowApp:
+	case rowApp, rowNew:
 		return h.apps[r.app].Agent
 	case rowSession:
 		return r.s.Agent
@@ -299,9 +423,12 @@ func (h *Hub) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return h, tea.Batch(cmd, h.touch())
 	case tea.PasteMsg:
-		if h.modal != nil && h.modal.kind == "input" {
+		if m := h.modal; m != nil && (m.kind == "input" || m.kind == "folders") {
 			var cmd tea.Cmd
-			h.modal.input, cmd = h.modal.input.Update(msg)
+			m.input, cmd = m.input.Update(msg)
+			if m.kind == "folders" {
+				m.choices, m.cursor = h.folderChoices(m.app, strings.TrimSpace(m.input.Value())), 0
+			}
 			return h, cmd
 		}
 		return h, h.edit(msg)
@@ -380,19 +507,12 @@ func (h *Hub) bodyKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	case "right":
-		if query != "" {
+		// → is Enter everywhere in the list (← goes back), except while it
+		// can still move the cursor through what's typed in the search.
+		if h.search.Position() < len([]rune(query)) {
 			break
 		}
-		if r.kind == rowApp {
-			if a := agent.Get(h.apps[r.app].Agent); a != nil && a.Sessions != nil {
-				h.prevScope = &struct {
-					scope  string
-					cursor int
-				}{h.scope, h.cursor}
-				h.setScope("agent:"+a.ID, 0)
-			}
-		}
-		return nil
+		return h.activate(launch.Here, nil)
 	case "left":
 		if strings.HasPrefix(h.scope, "agent:") && h.prevScope != nil {
 			// Back out of an agent's view, search and all.
@@ -493,11 +613,28 @@ func (h *Hub) activate(where launch.Where, extra []string) tea.Cmd {
 				return nil
 			}
 			config.SetDefault(app.Agent)
+		} else if app.Agent != "" && where == launch.Here && extra == nil {
+			// An agent: its page, to pick a folder or a conversation.
+			// (Alt-Enter and the launch sheet still start it right away.)
+			h.openPage(r.app)
+			return nil
 		}
 		return h.done(Result{Action: "launch", App: app, Where: where, Extra: extra})
+	case rowNew:
+		h.openFolders(r.app, where, extra)
 	case rowSession:
 		if pid, open := h.live[r.s.ID]; open {
-			// Already open: switch to its window instead of running it twice.
+			// Already open: switch to it instead of running it twice.
+			if p, ok := mux.Find(pid); ok {
+				// Inside herdr: select its pane, then show a client that's
+				// already attached, or attach one.
+				for _, c := range p.Clients() {
+					if addr := hypr.WindowForPID(c); addr != "" {
+						return h.done(Result{Action: "focus", Address: addr, Pane: &p})
+					}
+				}
+				return h.done(Result{Action: "attach", Pane: &p, Where: where})
+			}
 			if addr := hypr.WindowForPID(pid); addr != "" {
 				return h.done(Result{Action: "focus", Address: addr})
 			}
@@ -751,6 +888,41 @@ func (h *Hub) modalKey(msg tea.KeyPressMsg) tea.Cmd {
 			h.reload(false)
 			fail(config.SaveApps(h.apps))
 		}
+	case "folders":
+		switch key {
+		case "esc", "ctrl+c":
+			closeModal()
+		case "up":
+			m.cursor = max(0, m.cursor-1)
+		case "down":
+			m.cursor = min(len(m.choices)-1, m.cursor+1)
+		case "tab":
+			// Complete to the highlighted folder and look inside it, like a shell.
+			if m.cursor < len(m.choices) && !m.choices[m.cursor].create {
+				m.input.SetValue(util.ShortPath(m.choices[m.cursor].dir) + "/")
+				m.input.CursorEnd()
+				m.choices, m.cursor = h.folderChoices(m.app, m.input.Value()), 0
+			}
+		case "enter", "alt+enter":
+			if m.cursor >= len(m.choices) {
+				return nil
+			}
+			where := m.where
+			if key == "alt+enter" {
+				where = launch.Window
+			}
+			r := m.choices[m.cursor]
+			closeModal()
+			return h.startNew(r, where, m.extra)
+		default:
+			before := m.input.Value()
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			if v := m.input.Value(); v != before {
+				m.choices, m.cursor = h.folderChoices(m.app, strings.TrimSpace(v)), 0
+			}
+			return cmd
+		}
 	case "sheet":
 		o := m.options[m.cursor]
 		switch key {
@@ -765,7 +937,9 @@ func (h *Hub) modalKey(msg tea.KeyPressMsg) tea.Cmd {
 		case "right", "space":
 			m.values[m.cursor] = (m.values[m.cursor] + 1) % len(o.Choices)
 		case "enter", "alt+enter":
-			extra := sheetArgs(m)
+			// Non-nil, even with every option at its default: from the
+			// sheet, an app starts right away rather than opening its page.
+			extra := append([]string{}, sheetArgs(m)...)
 			closeModal()
 			where := launch.Here
 			if key == "alt+enter" {
