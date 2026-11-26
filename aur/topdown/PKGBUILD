@@ -1,7 +1,7 @@
 # Maintainer: Vinayak Mathur <vinayakrulez@gmail.com>
 
 pkgname=topdown
-pkgver=0.9.4
+pkgver=0.10.0
 pkgrel=1
 pkgdesc='One TUI to launch, resume and manage coding agents and their conversations'
 arch=('x86_64' 'aarch64')
@@ -19,7 +19,7 @@ optdepends=('omarchy: launch through omarchy-agent, plan-usage meters, theme col
             'libnotify: show errors from a keybinding as a notification'
             'zoxide: rank folder suggestions by frecency')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('0945e9728fe0e05ebfc036033b5e14a8082e872e6f3e3da3c7dd7eae9f9f1052')
+sha256sums=('SKIP')   # updpkgsums after the tag is pushed
 
 prepare() {
   cd "$pkgname-$pkgver"

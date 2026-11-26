@@ -1,6 +1,6 @@
 pkgbase = topdown
 	pkgdesc = One TUI to launch, resume and manage coding agents and their conversations
-	pkgver = 0.9.4
+	pkgver = 0.10.0
 	pkgrel = 1
 	url = https://github.com/viniemm/topdown
 	arch = x86_64
@@ -18,7 +18,7 @@ pkgbase = topdown
 	optdepends = libnotify: show errors from a keybinding as a notification
 	optdepends = zoxide: rank folder suggestions by frecency
 	options = !debug
-	source = topdown-0.9.4.tar.gz::https://github.com/viniemm/topdown/archive/refs/tags/v0.9.4.tar.gz
-	sha256sums = 0945e9728fe0e05ebfc036033b5e14a8082e872e6f3e3da3c7dd7eae9f9f1052
+	source = topdown-0.10.0.tar.gz::https://github.com/viniemm/topdown/archive/refs/tags/v0.10.0.tar.gz
+	sha256sums = SKIP
 
 pkgname = topdown
