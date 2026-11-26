@@ -157,3 +157,24 @@ func TestDeleteToTrash(t *testing.T) {
 		t.Fatalf("trashinfo: %s", info)
 	}
 }
+
+func TestContextTokens(t *testing.T) {
+	home := fixture(t)
+	turn := func(in, read, create int, side bool) map[string]any {
+		return map[string]any{"type": "assistant", "isSidechain": side, "message": map[string]any{"role": "assistant",
+			"usage": map[string]any{"input_tokens": in, "cache_read_input_tokens": read, "cache_creation_input_tokens": create, "output_tokens": 9}}}
+	}
+	write(t, home, ".claude/projects/-w-a/c5.jsonl", []any{user("ctx"), turn(1, 100, 10, false), turn(2, 200, 20, false), turn(5, 9000, 0, true)}, 0)
+	write(t, home, ".pi/agent/sessions/--w--/2026_p2.jsonl", []any{
+		map[string]any{"type": "session", "id": "p2", "cwd": "/w/p"},
+		map[string]any{"type": "message", "message": map[string]any{"role": "user", "content": "hi"}},
+		map[string]any{"type": "message", "message": map[string]any{"role": "assistant", "content": "yo",
+			"usage": map[string]any{"input": 4, "output": 3, "cacheRead": 400, "cacheWrite": 40}}},
+	}, 0)
+	if s, _ := agent.Claude.Sessions.Get("c5"); s.Context != 222 {
+		t.Fatalf("claude context %d, want 222 (latest main-thread turn)", s.Context)
+	}
+	if s, _ := agent.Pi.Sessions.Get(filepath.Join(home, ".pi/agent/sessions/--w--/2026_p2.jsonl")); s.Context != 444 {
+		t.Fatalf("pi context %d, want 444", s.Context)
+	}
+}

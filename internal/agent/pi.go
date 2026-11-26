@@ -15,12 +15,26 @@ import (
 
 // parsePi reads a Pi / Oh My Pi session (JSONL entries forming a tree). A name
 // is the latest session_info entry (Pi's /name); omp may write a "title" entry.
+// Context is the latest assistant message's prompt size.
 func parsePi(file string) Parsed {
 	var cwd, title, name string
 	var prompts []string
+	var context int
 	eachLine(file, func(line string, n int) bool {
+		if strings.Contains(line, `"role":"assistant"`) {
+			var u struct {
+				Input      int `json:"input"`
+				CacheRead  int `json:"cacheRead"`
+				CacheWrite int `json:"cacheWrite"`
+			}
+			if usageAt(line, `"usage":`, &u) {
+				if c := u.Input + u.CacheRead + u.CacheWrite; c > 0 {
+					context = c
+				}
+			}
+		}
 		if n >= 300 && !strings.Contains(line, `"session_info"`) {
-			return true // past the start, only renames matter
+			return true // past the start, only renames (and usage, above) matter
 		}
 		var d struct {
 			Type    string `json:"type"`
@@ -51,7 +65,7 @@ func parsePi(file string) Parsed {
 		}
 		return true
 	})
-	return Parsed{Title: cmp.Or(name, title, first(prompts)), Cwd: cwd, Prompts: prompts}
+	return Parsed{Title: cmp.Or(name, title, first(prompts)), Cwd: cwd, Prompts: prompts, Context: context}
 }
 
 // renamePi appends a session_info entry on the current leaf (the last entry), as Pi's /name writes.

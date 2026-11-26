@@ -14,11 +14,26 @@ import (
 )
 
 // parseClaude reads a Claude Code transcript: title (custom > ai > first real
-// prompt), latest working directory, first prompts.
+// prompt), latest working directory, first prompts, and the context size of
+// the latest main-thread turn.
 func parseClaude(file string) Parsed {
 	var cwd, custom, ai string
 	var prompts []string
+	var context int
 	eachLine(file, func(line string, _ int) bool {
+		if strings.Contains(line, `"type":"assistant"`) && !strings.Contains(line, `"isSidechain":true`) {
+			var u struct {
+				Input       int `json:"input_tokens"`
+				CacheRead   int `json:"cache_read_input_tokens"`
+				CacheCreate int `json:"cache_creation_input_tokens"`
+			}
+			if usageAt(line, `"usage":`, &u) {
+				if n := u.Input + u.CacheRead + u.CacheCreate; n > 0 {
+					context = n // the latest wins, so a /compact shows the smaller context
+				}
+			}
+			return true
+		}
 		// Cheap substring checks first; only promising lines are JSON-decoded.
 		if i := strings.Index(line, `"cwd":"`); i != -1 {
 			if j := strings.IndexByte(line[i+7:], '"'); j != -1 {
@@ -57,7 +72,7 @@ func parseClaude(file string) Parsed {
 		}
 		return true
 	})
-	return Parsed{Title: cmp.Or(custom, ai, first(prompts)), Cwd: cwd, Prompts: prompts}
+	return Parsed{Title: cmp.Or(custom, ai, first(prompts)), Cwd: cwd, Prompts: prompts, Context: context}
 }
 
 type claudeStore struct{ fileStore }

@@ -20,9 +20,10 @@ type Parsed struct {
 	Title   string   `json:"title"`
 	Cwd     string   `json:"cwd"`
 	Prompts []string `json:"prompts"`
+	Context int      `json:"context,omitempty"`
 }
 
-const cacheVersion = 4 // separate from the TypeScript build's cache format
+const cacheVersion = 5 // separate from the TypeScript build's cache format
 
 type cacheEntry struct {
 	Parsed
@@ -117,7 +118,7 @@ func (f fileStore) session(file string, st os.FileInfo) (Session, bool) {
 		id = strings.TrimSuffix(filepath.Base(file), ".jsonl")
 	}
 	return Session{Agent: f.agent, ID: id, Cwd: info.Cwd, Title: info.Title,
-		When: float64(st.ModTime().UnixMilli()) / 1000, Prompts: info.Prompts, Path: file}, true
+		When: float64(st.ModTime().UnixMilli()) / 1000, Prompts: info.Prompts, Path: file, Context: info.Context}, true
 }
 
 // List returns up to limit sessions, newest first; only shown files are parsed.
@@ -201,6 +202,16 @@ func eachLine(file string, fn func(line string, n int) bool) {
 			return
 		}
 	}
+}
+
+// usageAt decodes the JSON object that follows key in line (e.g. `"usage":`)
+// into v, without decoding the rest of a possibly very long line.
+func usageAt(line, key string, v any) bool {
+	i := strings.LastIndex(line, key)
+	if i == -1 {
+		return false
+	}
+	return json.NewDecoder(strings.NewReader(line[i+len(key):])).Decode(v) == nil
 }
 
 // appendJSONL appends one compact JSON entry, keys in the given order.

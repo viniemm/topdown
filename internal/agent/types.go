@@ -16,6 +16,9 @@ type Session struct {
 	Prompts []string
 	// Path is the backing file, for file stores.
 	Path string
+	// Context is the tokens the model last saw (input + cache read + cache
+	// write of the latest turn); 0 when the store doesn't record usage.
+	Context int
 }
 
 // Option is a per-launch choice in the launch sheet, mapped to CLI flags.
