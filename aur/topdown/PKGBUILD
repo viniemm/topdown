@@ -19,7 +19,7 @@ optdepends=('omarchy: launch through omarchy-agent, plan-usage meters, theme col
             'libnotify: show errors from a keybinding as a notification'
             'zoxide: rank folder suggestions by frecency')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')   # updpkgsums after the tag is pushed
+sha256sums=('c2e75a2f7af1304735ee1bcd3e5135b03c3109695645945e0793b70cda2eec41')
 
 prepare() {
   cd "$pkgname-$pkgver"
