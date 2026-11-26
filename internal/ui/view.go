@@ -32,13 +32,15 @@ func (h *Hub) render() string {
 	entries := h.entries()
 	return h.frame.render(h.width, h.height, entries,
 		func(w, rows int) []string {
-			return h.frame.sidebar(entries, w, rows, h.scope, h.focusScope, func(e entry) entryStyle {
+			return h.frame.sidebar(entries, w, rows, h.sidebarScope(), h.focusScope, func(e entry) entryStyle {
 				var icon string
 				switch e.kind {
 				case "apps":
 					icon = theme.Fg(theme.Accent, "▦")
 				case "recent":
 					icon = theme.Fg(theme.Accent, "◷")
+				case "projects":
+					icon = theme.Fg(theme.Accent, "♣")
 				default:
 					icon = theme.Agent(e.label, "◆")
 				}
@@ -96,7 +98,7 @@ func (h *Hub) footer() string {
 	parts := []string{k("⏎/→", "open"), k("Alt-⏎", "window"), k("^O", "options"), k("Tab", other)}
 	if h.scope == "apps" {
 		parts = append(parts, k("^D", "default"), k("^R", "usage"), k("^A", "add"))
-	} else if strings.HasPrefix(h.scope, "agent:") {
+	} else if strings.HasPrefix(h.scope, "agent:") || strings.HasPrefix(h.scope, "project:") {
 		parts = append(parts, k("←", "back"))
 	}
 	parts = append(parts, k("^E", "rename"), k("^X", "delete"), k("esc", "close"))
@@ -108,8 +110,12 @@ func (h *Hub) renderBody(w, height int) []string {
 	switch {
 	case h.scope == "recent":
 		title = "Recent conversations"
+	case h.scope == "projects":
+		title = "Projects"
 	case strings.HasPrefix(h.scope, "agent:"):
 		title = strings.TrimPrefix(h.scope, "agent:") + " conversations"
+	case strings.HasPrefix(h.scope, "project:"):
+		title = util.Project(strings.TrimPrefix(h.scope, "project:")) + " conversations"
 	}
 	banner := ""
 	if h.opts.ChooseDefault {
@@ -202,6 +208,14 @@ func (h *Hub) renderRow(r row, aw, lw int) string {
 		return "   " + theme.Fg(theme.Accent, "+ New conversation") + dim("  in "+util.ShortPath(r.dir)+" or another folder…")
 	case rowMore:
 		return dim("   ↓ more conversations…")
+	case rowProject:
+		proj := util.Project(r.dir)
+		n := fmt.Sprintf("%d conversation", r.count)
+		if r.count != 1 {
+			n += "s"
+		}
+		return "   " + theme.Age(r.s.When, pad(util.Stamp(r.s.When), 11)) + theme.Project(proj, pad(util.Clip(proj, 20), 20)) +
+			" " + dim(pad(n, 16)) + " " + dim(util.ShortPath(r.dir))
 	case rowEmpty:
 		return dim("   " + r.text)
 	}
@@ -211,8 +225,21 @@ func (h *Hub) renderRow(r row, aw, lw int) string {
 		live = h.liveDot()
 	}
 	proj := util.Project(s.Cwd)
-	return " " + live + " " + theme.Age(s.When, pad(util.Stamp(s.When), 11)) + theme.Agent(s.Agent, pad(s.Agent, aw)) +
-		"  " + theme.Project(proj, pad(util.Clip(proj, 12), 12)) + " " + util.Oneline(s.Title, 200)
+	// An agent's own page lists only its conversations: the agent column would just repeat it.
+	// A project's page likewise drops the project column.
+	who, where := "", ""
+	if !strings.HasPrefix(h.scope, "agent:") {
+		who = theme.Agent(s.Agent, pad(s.Agent, aw)) + "  "
+	}
+	if !strings.HasPrefix(h.scope, "project:") {
+		where = theme.Project(proj, pad(util.Clip(proj, 12), 12)) + " "
+	}
+	ctx := ""
+	if s.Context > 0 {
+		ctx = util.Tokens(float64(s.Context))
+	}
+	return " " + live + " " + theme.Age(s.When, pad(util.Stamp(s.When), 11)) + who +
+		where + dim(pad(ctx, 6)) + " " + util.Oneline(s.Title, 200)
 }
 
 func (h *Hub) renderDetail(w int) []string {
@@ -248,6 +275,9 @@ func (h *Hub) renderDetail(w int) []string {
 		if _, ok := h.live[s.ID]; ok {
 			live = "  " + h.liveDot() + theme.Fg(theme.Success, " open")
 		}
+		if s.Context > 0 {
+			live = "  " + dim(util.Tokens(float64(s.Context))+" context") + live
+		}
 		out := []string{
 			theme.Bold(util.Oneline(s.Title, w)),
 			theme.Agent(s.Agent, s.Agent) + "  " + theme.Project(util.Project(s.Cwd), util.ShortPath(s.Cwd)) + "  " +
@@ -260,6 +290,16 @@ func (h *Hub) renderDetail(w int) []string {
 			out = append(out, theme.Fg(theme.Accent, "›")+" "+util.Oneline(p, w-2))
 		}
 		return out
+	case rowProject:
+		var who []string
+		for _, a := range r.agents {
+			who = append(who, theme.Agent(a, a))
+		}
+		return []string{
+			theme.Bold(util.Project(r.dir)) + "  " + theme.Project(util.Project(r.dir), util.ShortPath(r.dir)),
+			strings.Join(who, " ") + "  " + theme.Age(r.s.When, "last "+util.Ago(r.s.When)),
+			theme.Fg(theme.Accent, "›") + " " + util.Oneline(r.s.Title, w-2),
+		}
 	case rowAdd:
 		return []string{dim("Installed agents topdown knows, or any command to run in a terminal.")}
 	case rowNew:

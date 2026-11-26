@@ -28,7 +28,7 @@ Pick something and the hub's own terminal becomes that agent; no second window.
 | Ctrl-X / Del | Delete a conversation (to the Trash, or the agent's own delete) or remove an app; asks first, refuses open ones |
 | Esc | Clear the search, go back, or close |
 
-`←` from the list focuses the sidebar (`↑/↓` switch scopes there).
+`←` from the list focuses the sidebar (`↑/↓` switch scopes there): Apps, Recent, **Projects** (each folder with conversations; Enter lists them), and one entry per agent. Conversation rows show the context size of their latest turn (Claude, Pi, omp).
 
 ## Commands
 

@@ -2,7 +2,7 @@ package ui
 
 // The main screen, in the layout of omp's model picker:
 //
-//	sidebar  Apps · Recent · one entry per agent with conversations
+//	sidebar  Apps · Recent · Projects · one entry per agent with conversations
 //	body     scope title, search line, list, detail panel
 //	footer   key hints for whatever has focus
 
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,8 @@ import (
 const (
 	page        = 40
 	searchLimit = 300
+	// projectScan is how many conversations the Projects views group by folder.
+	projectScan = 2000
 )
 
 type rowKind int
@@ -42,7 +45,8 @@ const (
 	rowSession
 	rowMore
 	rowEmpty
-	rowNew // a new conversation on an agent's page, in dir
+	rowNew     // a new conversation on an agent's page, in dir
+	rowProject // a folder with conversations: dir, count, s is its latest
 )
 
 type row struct {
@@ -55,6 +59,9 @@ type row struct {
 	dir    string
 	create bool
 	folder folders.Folder
+	// rowProject: how many conversations, and which agents had them
+	count  int
+	agents []string
 }
 
 // Result is what the hub decided; the caller acts on it after the UI is gone.
@@ -113,7 +120,7 @@ type Hub struct {
 	width, height int
 	apps          []config.App
 	scope         string
-	prevScope     *scopeAt // where an agent's page was opened from
+	prevScope     *scopeAt // where an agent's or a project's page was opened from
 	focusScope    bool
 	rows          []row
 	cursor        int
@@ -157,7 +164,8 @@ func (h *Hub) Init() tea.Cmd { return h.schedule() }
 // ---------- data ----------
 
 func (h *Hub) entries() []entry {
-	es := []entry{{id: "apps", kind: "apps", label: "Apps", annotation: fmt.Sprint(len(h.apps))}, {id: "recent", kind: "recent", label: "Recent"}}
+	es := []entry{{id: "apps", kind: "apps", label: "Apps", annotation: fmt.Sprint(len(h.apps))}, {id: "recent", kind: "recent", label: "Recent"},
+		{id: "projects", kind: "projects", label: "Projects"}}
 	agents := config.SessionAgents(h.apps)
 	if len(agents) > 0 {
 		es = append(es, entry{id: "sep", kind: "separator"})
@@ -182,7 +190,7 @@ func sameRow(a, b row) bool {
 		return a.s.Agent == b.s.Agent && a.s.ID == b.s.ID
 	case rowApp:
 		return a.app == b.app
-	case rowNew:
+	case rowNew, rowProject:
 		return a.dir == b.dir
 	}
 	return true
@@ -211,6 +219,19 @@ func (h *Hub) reload(keepCursor bool) {
 		if query == "" {
 			h.rows = append(h.rows, row{kind: rowAdd})
 		}
+	} else if h.scope == "projects" {
+		projects := groupProjects(catalog.Recent(config.SessionAgents(h.apps), projectScan).Sessions)
+		if query != "" {
+			projects = fuzzy.Rank(projects, query, func(r row) string { return util.Project(r.dir) + " " + r.dir })
+		}
+		h.rows = projects
+		if len(h.rows) == 0 {
+			text := "no projects yet"
+			if query != "" {
+				text = "no projects match"
+			}
+			h.rows = append(h.rows, row{kind: rowEmpty, text: text})
+		}
 	} else {
 		agents := config.SessionAgents(h.apps)
 		if strings.HasPrefix(h.scope, "agent:") {
@@ -224,6 +245,9 @@ func (h *Hub) reload(keepCursor bool) {
 			h.rows = append(h.rows, row{kind: rowNew, app: i, dir: config.Workdir()})
 		}
 		pg := catalog.Recent(agents, limit)
+		if dir, ok := strings.CutPrefix(h.scope, "project:"); ok {
+			pg = inProject(catalog.Recent(agents, projectScan).Sessions, dir, limit)
+		}
 		sessions := pg.Sessions
 		if query != "" {
 			sessions = fuzzy.Rank(sessions, query, func(s agent.Session) string {
@@ -347,15 +371,65 @@ func (h *Hub) appIndex(agentID string) int {
 	return -1
 }
 
+// groupProjects is one row per folder that has conversations, most recently active first.
+func groupProjects(sessions []agent.Session) []row {
+	var out []row
+	at := map[string]int{}
+	for _, s := range sessions { // newest first, so a folder's first is its latest
+		if s.Cwd == "" {
+			continue
+		}
+		i, ok := at[s.Cwd]
+		if !ok {
+			i, at[s.Cwd] = len(out), len(out)
+			out = append(out, row{kind: rowProject, dir: s.Cwd, s: s})
+		}
+		r := &out[i]
+		r.count++
+		if !slices.Contains(r.agents, s.Agent) {
+			r.agents = append(r.agents, s.Agent)
+		}
+	}
+	return out
+}
+
+// inProject is a page of the conversations held in dir.
+func inProject(sessions []agent.Session, dir string, limit int) catalog.Page {
+	var in []agent.Session
+	for _, s := range sessions {
+		if s.Cwd == dir {
+			in = append(in, s)
+		}
+	}
+	if len(in) > limit {
+		return catalog.Page{Sessions: in[:limit], More: true}
+	}
+	return catalog.Page{Sessions: in}
+}
+
+// openProject shows the conversations held in one folder.
+func (h *Hub) openProject(dir string) {
+	h.prevScope = &scopeAt{h.scope, h.cursor}
+	h.setScope("project:"+dir, 0)
+}
+
+// sidebarScope is the sidebar entry the current scope sits under (a project's page: Projects).
+func (h *Hub) sidebarScope() string {
+	if strings.HasPrefix(h.scope, "project:") {
+		return "projects"
+	}
+	return h.scope
+}
+
 // openPage shows an agent's page: New conversation on top, its conversations below.
 func (h *Hub) openPage(app int) {
 	h.prevScope = &scopeAt{h.scope, h.cursor}
 	h.setScope("agent:"+h.apps[app].Agent, 0)
 }
 
-// goBack leaves an agent's page for where it was opened from (false: not on one).
+// goBack leaves an agent's or a project's page for where it was opened from (false: not on one).
 func (h *Hub) goBack() bool {
-	if !strings.HasPrefix(h.scope, "agent:") || h.prevScope == nil {
+	if !(strings.HasPrefix(h.scope, "agent:") || strings.HasPrefix(h.scope, "project:")) || h.prevScope == nil {
 		return false
 	}
 	p := *h.prevScope
@@ -456,7 +530,7 @@ func (h *Hub) scopeKey(key string) tea.Cmd {
 	}
 	i := 0
 	for j, e := range es {
-		if e.id == h.scope {
+		if e.id == h.sidebarScope() {
 			i = j
 		}
 	}
@@ -619,6 +693,8 @@ func (h *Hub) activate(where launch.Where, extra []string) tea.Cmd {
 		return h.done(Result{Action: "launch", App: app, Where: where, Extra: extra})
 	case rowNew:
 		h.openFolders(r.app, where, extra)
+	case rowProject:
+		h.openProject(r.dir)
 	case rowSession:
 		if pid, open := h.live[r.s.ID]; open {
 			// Already open: switch to it instead of running it twice.
